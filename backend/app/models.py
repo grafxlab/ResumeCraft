@@ -68,6 +68,21 @@ class Profile(Base, TimestampMixin):
     links: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
+class IgnoredWord(Base, TimestampMixin):
+    __tablename__ = "ignored_words"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "word", name="uq_ignored_word_profile"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), index=True
+    )
+    word: Mapped[str] = mapped_column(String(100))
+
+    profile: Mapped[Profile] = relationship()
+
+
 class JobPosting(Base, TimestampMixin):
     __tablename__ = "job_postings"
     __table_args__ = (

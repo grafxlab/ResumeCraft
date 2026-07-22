@@ -2,6 +2,7 @@ import type {
   Application,
   ApplicationStatus,
   Document,
+  IgnoredWord,
   JobPosting,
   Profile,
 } from "./types";
@@ -39,6 +40,22 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+  listIgnoredWords: (profileId: number) =>
+    request<IgnoredWord[]>(`/profiles/${profileId}/ignored-words`),
+  ignoreWord: (profileId: number, word: string) =>
+    request<IgnoredWord>(`/profiles/${profileId}/ignored-words`, {
+      method: "POST",
+      body: JSON.stringify({ word }),
+    }),
+  unignoreWord: async (profileId: number, word: string): Promise<void> => {
+    const resp = await fetch(
+      `${BASE}/profiles/${profileId}/ignored-words/${encodeURIComponent(word)}`,
+      { method: "DELETE" },
+    );
+    if (!resp.ok && resp.status !== 204) {
+      throw new Error(`Unable to un-ignore word (${resp.status})`);
+    }
+  },
   parseResume: async (file: File): Promise<Partial<Profile>> => {
     const form = new FormData();
     form.append("file", file);
@@ -80,6 +97,10 @@ export const api = {
     const qs = q.toString();
     return request<JobPosting[]>(`/jobs${qs ? `?${qs}` : ""}`);
   },
+  rescoreJob: (jobId: number, profileId: number) =>
+    request<JobPosting>(`/jobs/${jobId}/rescore?profile_id=${profileId}`, {
+      method: "POST",
+    }),
 
   // Documents
   generateResume: (job_id: number, profile_id: number, instructions?: string) =>

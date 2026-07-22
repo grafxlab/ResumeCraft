@@ -15,10 +15,15 @@ const STATUSES: ApplicationStatus[] = [
 
 interface Props {
   focusJobId: number | null;
+  profileId: number | undefined;
   onFocusHandled: () => void;
 }
 
-export default function ApplicationsTab({ focusJobId, onFocusHandled }: Props) {
+export default function ApplicationsTab({
+  focusJobId,
+  profileId,
+  onFocusHandled,
+}: Props) {
   const [apps, setApps] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [viewingDocId, setViewingDocId] = useState<number | null>(null);
@@ -31,6 +36,9 @@ export default function ApplicationsTab({ focusJobId, onFocusHandled }: Props) {
   );
   const [highlightId, setHighlightId] = useState<number | null>(null);
   const [focusedOnlyId, setFocusedOnlyId] = useState<number | null>(null);
+  const [regeneratingDocumentId, setRegeneratingDocumentId] = useState<
+    number | null
+  >(null);
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const load = async () => {
@@ -129,6 +137,23 @@ export default function ApplicationsTab({ focusJobId, onFocusHandled }: Props) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const regenerateDocument = async (documentId: number) => {
+    if (!profileId) {
+      setError("No active profile.");
+      return;
+    }
+    setRegeneratingDocumentId(documentId);
+    setError(null);
+    try {
+      const updated = await api.regenerateDocument(documentId, profileId);
+      setViewingDocId(updated.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRegeneratingDocumentId(null);
     }
   };
 
@@ -302,33 +327,60 @@ export default function ApplicationsTab({ focusJobId, onFocusHandled }: Props) {
                 </button>
               </div>
             </div>
-            <div>
-              <label>Documents</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="btn secondary"
-                  title="View resume"
-                  disabled={!app.resume_document_id}
-                  onClick={() =>
-                    app.resume_document_id &&
-                    setViewingDocId(app.resume_document_id)
-                  }
-                >
-                  📄 Resume
-                </button>
-                <button
-                  className="btn secondary"
-                  title="View cover letter"
-                  disabled={!app.cover_letter_document_id}
-                  onClick={() =>
-                    app.cover_letter_document_id &&
-                    setViewingDocId(app.cover_letter_document_id)
-                  }
-                >
-                  ✉️ Cover letter
-                </button>
+            {app.status !== "draft" && (
+              <div>
+                <label>Documents</label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    className="btn secondary"
+                    disabled={!app.resume_document_id}
+                    onClick={() =>
+                      app.resume_document_id &&
+                      setViewingDocId(app.resume_document_id)
+                    }
+                  >
+                    Preview resume
+                  </button>
+                  <button
+                    className="btn secondary"
+                    disabled={
+                      !app.resume_document_id || regeneratingDocumentId !== null
+                    }
+                    onClick={() =>
+                      app.resume_document_id && regenerateDocument(app.resume_document_id)
+                    }
+                  >
+                    {regeneratingDocumentId === app.resume_document_id
+                      ? "Regenerating resume..."
+                      : "Regenerate resume"}
+                  </button>
+                  <button
+                    className="btn secondary"
+                    disabled={!app.cover_letter_document_id}
+                    onClick={() =>
+                      app.cover_letter_document_id &&
+                      setViewingDocId(app.cover_letter_document_id)
+                    }
+                  >
+                    Preview cover letter
+                  </button>
+                  <button
+                    className="btn secondary"
+                    disabled={
+                      !app.cover_letter_document_id || regeneratingDocumentId !== null
+                    }
+                    onClick={() =>
+                      app.cover_letter_document_id &&
+                      regenerateDocument(app.cover_letter_document_id)
+                    }
+                  >
+                    {regeneratingDocumentId === app.cover_letter_document_id
+                      ? "Regenerating cover letter..."
+                      : "Regenerate cover letter"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           <label>Notes</label>

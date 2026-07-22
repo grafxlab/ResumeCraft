@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { Profile } from "../types";
+import type { IgnoredWord, Profile } from "../types";
 import Spinner from "./Spinner";
 
 interface Props {
@@ -21,6 +21,9 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showUpdatedDialog, setShowUpdatedDialog] = useState(false);
+  const [ignoredWords, setIgnoredWords] = useState<IgnoredWord[]>([]);
+  const [unignoringWord, setUnignoringWord] = useState<string | null>(null);
   const [links, setLinks] = useState<Record<string, string>>({});
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -42,6 +45,29 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (!profile) return;
     applyData(profile);
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile) {
+      setIgnoredWords([]);
+      return;
+    }
+    api.listIgnoredWords(profile.id).then(setIgnoredWords).catch(() => {
+      setIgnoredWords([]);
+    });
+  }, [profile]);
+
+  const unignoreWord = async (word: string) => {
+    if (!profile) return;
+    setUnignoringWord(word);
+    try {
+      await api.unignoreWord(profile.id, word);
+      setIgnoredWords((current) => current.filter((item) => item.word !== word));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUnignoringWord(null);
+    }
+  };
 
   const importResume = async (file: File) => {
     setError(null);
@@ -83,6 +109,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         ? await api.updateProfile(profile.id, payload)
         : await api.createProfile(payload);
       onSaved(saved);
+      setShowUpdatedDialog(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -92,6 +119,32 @@ export default function ProfileTab({ profile, onSaved }: Props) {
 
   return (
     <div className="panel">
+      {showUpdatedDialog && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => setShowUpdatedDialog(false)}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="resume-updated-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="resume-updated-title">Resume Updated</strong>
+              <button
+                className="btn secondary"
+                onClick={() => setShowUpdatedDialog(false)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="meta">Your profile changes have been saved.</p>
+          </div>
+        </div>
+      )}
       <h2>Master profile</h2>
       <p className="meta">
         This is the single source of truth used to tailor every resume and cover
@@ -157,6 +210,32 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       />
       <label>Education (JSON array)</label>
       <textarea value={education} onChange={(e) => setEducation(e.target.value)} />
+      {profile && (
+        <div
+          className="panel"
+          style={{ background: "var(--bg)", marginTop: 16, marginBottom: 0 }}
+        >
+          <strong>Ignored match keywords</strong>
+          {ignoredWords.length === 0 ? (
+            <p className="meta">No ignored keywords.</p>
+          ) : (
+            <div className="actions" style={{ marginTop: 10 }}>
+              {ignoredWords.map((item) => (
+                <button
+                  key={item.id}
+                  className="btn secondary"
+                  disabled={unignoringWord === item.word}
+                  onClick={() => unignoreWord(item.word)}
+                >
+                  {unignoringWord === item.word
+                    ? `Removing ${item.word}...`
+                    : `Un-ignore ${item.word}`}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
       <div className="actions">
         <button className="btn" onClick={save} disabled={saving || !fullName}>

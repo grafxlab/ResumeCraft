@@ -28,6 +28,13 @@ export interface Profile {
   links: Record<string, string>;
 }
 
+export interface IgnoredWord {
+  id: number;
+  profile_id: number;
+  word: string;
+  created_at: string;
+}
+
 export interface JobPosting {
   id: number;
   source: string;

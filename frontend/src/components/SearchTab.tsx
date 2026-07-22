@@ -1,18 +1,39 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { matchStyle } from "../match";
-import type { Document, JobPosting, Profile } from "../types";
+import type { ApplicationStatus, Document, JobPosting, Profile } from "../types";
 import DocumentEditor from "./DocumentEditor";
+import DocumentViewer from "./DocumentViewer";
 import Spinner from "./Spinner";
 
 interface Props {
   profile: Profile | null;
+  onProfileUpdated: (profile: Profile) => void;
   onOpenApplication: (jobId: number) => void;
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-export default function SearchTab({ profile, onOpenApplication }: Props) {
+function matchKeywords(notes: string | null): {
+  matched: string;
+  unmatched: string;
+} | null {
+  const prefix = "Matched: ";
+  const separator = ". Missing: ";
+  if (!notes?.startsWith(prefix)) return null;
+  const separatorIndex = notes.indexOf(separator, prefix.length);
+  if (separatorIndex === -1) return null;
+  return {
+    matched: notes.slice(prefix.length, separatorIndex),
+    unmatched: notes.slice(separatorIndex + separator.length).replace(/\.$/, ""),
+  };
+}
+
+export default function SearchTab({
+  profile,
+  onProfileUpdated,
+  onOpenApplication,
+}: Props) {
   const [query, setQuery] = useState(
     () => localStorage.getItem("search.query") ?? "",
   );
@@ -24,10 +45,28 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busyJob, setBusyJob] = useState<number | null>(null);
+  const [busyAction, setBusyAction] = useState<{
+    jobId: number;
+    type: "resume" | "cover" | "track";
+  } | null>(null);
   const [docs, setDocs] = useState<Record<number, Document[]>>({});
   const [cachedAt, setCachedAt] = useState<number | null>(null);
   const [trackedJobIds, setTrackedJobIds] = useState<Set<number>>(new Set());
+  const [trackedStatuses, setTrackedStatuses] = useState<
+    Record<number, ApplicationStatus>
+  >({});
+  const [ignoredWords, setIgnoredWords] = useState<Set<string>>(new Set());
+  const [selectedUnmatchedWord, setSelectedUnmatchedWord] = useState<{
+    jobId: number;
+    word: string;
+  } | null>(null);
+  const [ignoringWord, setIgnoringWord] = useState(false);
+  const [addingWord, setAddingWord] = useState(false);
+  const [viewingDocumentId, setViewingDocumentId] = useState<number | null>(null);
+
+  const sourceNames = sources.map((source) =>
+    source === "adzuna" ? "Adzuna" : source === "jsearch" ? "JSearch" : source,
+  );
 
   useEffect(() => {
     localStorage.setItem("search.query", query);
@@ -55,6 +94,17 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
   }, []);
 
   useEffect(() => {
+    if (!profile) {
+      setIgnoredWords(new Set());
+      return;
+    }
+    api
+      .listIgnoredWords(profile.id)
+      .then((words) => setIgnoredWords(new Set(words.map((item) => item.word))))
+      .catch(() => setIgnoredWords(new Set()));
+  }, [profile]);
+
+  useEffect(() => {
     api
       .sources()
       .then((r) => setAvailable(r.available))
@@ -65,7 +115,12 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
   useEffect(() => {
     api
       .listApplications()
-      .then((apps) => setTrackedJobIds(new Set(apps.map((a) => a.job_id))))
+      .then((apps) => {
+        setTrackedJobIds(new Set(apps.map((app) => app.job_id)));
+        setTrackedStatuses(
+          Object.fromEntries(apps.map((app) => [app.job_id, app.status])),
+        );
+      })
       .catch(() => {
         /* ignore */
       });
@@ -104,7 +159,7 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
       setError("Create a profile first.");
       return;
     }
-    setBusyJob(job.id);
+    setBusyAction({ jobId: job.id, type: kind });
     setError(null);
     try {
       const doc =
@@ -115,15 +170,16 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
         ...prev,
         [job.id]: [...(prev[job.id] ?? []), doc],
       }));
+      setViewingDocumentId(doc.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyJob(null);
+      setBusyAction(null);
     }
   };
 
   const track = async (job: JobPosting) => {
-    setBusyJob(job.id);
+    setBusyAction({ jobId: job.id, type: "track" });
     setError(null);
     try {
       const jobDocs = docs[job.id] ?? [];
@@ -136,10 +192,11 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
         status: "draft",
       });
       setTrackedJobIds((prev) => new Set(prev).add(job.id));
+      setTrackedStatuses((prev) => ({ ...prev, [job.id]: "draft" }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyJob(null);
+      setBusyAction(null);
     }
   };
 
@@ -157,8 +214,144 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
     });
   };
 
+  const ignoreSelectedWord = async () => {
+    if (!profile || !selectedUnmatchedWord) return;
+    setIgnoringWord(true);
+    try {
+      const ignored = await api.ignoreWord(profile.id, selectedUnmatchedWord.word);
+      const rescored = await api.rescoreJob(
+        selectedUnmatchedWord.jobId,
+        profile.id,
+      );
+      setIgnoredWords((current) => new Set(current).add(ignored.word));
+      setJobs((current) => {
+        const updated = current.map((job) =>
+          job.id === rescored.id ? rescored : job,
+        );
+        if (cachedAt) {
+          localStorage.setItem(
+            "search.results",
+            JSON.stringify({ ts: cachedAt, jobs: updated }),
+          );
+        }
+        return updated;
+      });
+      setSelectedUnmatchedWord(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIgnoringWord(false);
+    }
+  };
+
+  const addSelectedWordToResume = async () => {
+    if (!profile || !selectedUnmatchedWord) return;
+    setAddingWord(true);
+    try {
+      const word = selectedUnmatchedWord.word;
+      const skills = profile.skills.some(
+        (skill) => skill.toLowerCase() === word.toLowerCase(),
+      )
+        ? profile.skills
+        : [...profile.skills, word];
+      const updatedProfile = await api.updateProfile(profile.id, {
+        ...profile,
+        skills,
+      });
+      const rescored = await api.rescoreJob(
+        selectedUnmatchedWord.jobId,
+        updatedProfile.id,
+      );
+      onProfileUpdated(updatedProfile);
+      setJobs((current) => {
+        const updated = current.map((job) =>
+          job.id === rescored.id ? rescored : job,
+        );
+        if (cachedAt) {
+          localStorage.setItem(
+            "search.results",
+            JSON.stringify({ ts: cachedAt, jobs: updated }),
+          );
+        }
+        return updated;
+      });
+      setSelectedUnmatchedWord(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddingWord(false);
+    }
+  };
+
   return (
     <div>
+      {selectedUnmatchedWord && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() =>
+            !ignoringWord && !addingWord && setSelectedUnmatchedWord(null)
+          }
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ignore-keyword-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="ignore-keyword-title">Keyword action</strong>
+            </div>
+            <p className="meta">
+              Add <strong>{selectedUnmatchedWord.word}</strong> to your resume
+              skills, or ignore it for future job match scores.
+            </p>
+            <div className="actions" style={{ justifyContent: "flex-end" }}>
+              <button
+                className="btn secondary"
+                disabled={ignoringWord || addingWord}
+                onClick={() => setSelectedUnmatchedWord(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn secondary"
+                disabled={ignoringWord || addingWord}
+                onClick={addSelectedWordToResume}
+              >
+                {addingWord ? "Adding..." : "Add Keyword"}
+              </button>
+              <button
+                className="btn"
+                disabled={ignoringWord || addingWord}
+                onClick={ignoreSelectedWord}
+              >
+                {ignoringWord ? "Ignoring..." : "Ignore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {loading && (
+        <div className="modal-backdrop" role="presentation">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="searching-boards-title"
+            aria-live="polite"
+          >
+            <div className="modal-header">
+              <strong id="searching-boards-title">Searching job boards</strong>
+              <Spinner size="lg" />
+            </div>
+            <p className="meta">
+              Searching {sourceNames.length > 0 ? sourceNames.join(" and ") : "the selected sources"}.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="panel">
         <h2>Search Job Boards</h2>
         <div className="row">
@@ -241,7 +434,19 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
         </div>
       )}
 
-      {jobs.map((job) => (
+      {jobs.map((job) => {
+        const keywords = matchKeywords(job.match_notes);
+        const isJobBusy = busyAction?.jobId === job.id;
+        const isGeneratingResume =
+          isJobBusy && busyAction?.type === "resume";
+        const isGeneratingCover = isJobBusy && busyAction?.type === "cover";
+        const isTracking = isJobBusy && busyAction?.type === "track";
+        const unmatchedWords = keywords
+          ? keywords.unmatched === "none"
+            ? []
+            : keywords.unmatched.split(", ").filter((word) => !ignoredWords.has(word))
+          : [];
+        return (
         <div className="job" key={job.id}>
           <div className="title">{job.title}</div>
           <div className="meta">
@@ -259,14 +464,42 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
             )}
             <span className="badge">{job.status}</span>
           </div>
-          {job.match_notes && <p className="meta">{job.match_notes}</p>}
+          {keywords ? (
+            <div className="meta" style={{ margin: "8px 0" }}>
+              <div>
+                Matched keywords: {keywords.matched}
+              </div>
+              <div>
+                Unmatched keywords: {unmatchedWords.length > 0 ? (
+                  unmatchedWords.map((word, index) => (
+                    <span key={word}>
+                      {index > 0 && ", "}
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() =>
+                          setSelectedUnmatchedWord({ jobId: job.id, word })
+                        }
+                      >
+                        {word}
+                      </button>
+                    </span>
+                  ))
+                ) : (
+                  "none"
+                )}
+              </div>
+            </div>
+          ) : (
+            job.match_notes && <p className="meta">{job.match_notes}</p>
+          )}
           <div className="actions">
             <button
               className="btn secondary"
-              disabled={busyJob === job.id}
+              disabled={isJobBusy}
               onClick={() => generate(job, "resume")}
             >
-              {busyJob === job.id ? (
+              {isGeneratingResume ? (
                 <Spinner label="Generating…" />
               ) : (
                 "Generate resume"
@@ -274,30 +507,35 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
             </button>
             <button
               className="btn secondary"
-              disabled={busyJob === job.id}
+              disabled={isJobBusy}
               onClick={() => generate(job, "cover")}
             >
-              {busyJob === job.id ? (
+              {isGeneratingCover ? (
                 <Spinner label="Generating…" />
               ) : (
                 "Generate cover letter"
               )}
             </button>
             {trackedJobIds.has(job.id) ? (
-              <button
-                className="btn"
-                style={{ background: "var(--accent-2)", color: "#06280f" }}
-                onClick={() => onOpenApplication(job.id)}
-              >
-                ✓ Tracked
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  className="btn"
+                  style={{ background: "var(--accent-2)", color: "#fff" }}
+                  onClick={() => onOpenApplication(job.id)}
+                >
+                  ✓ Tracked
+                </button>
+                <span className="badge">
+                  {trackedStatuses[job.id] ?? "draft"}
+                </span>
+              </div>
             ) : (
               <button
                 className="btn"
-                disabled={busyJob === job.id}
+                disabled={isJobBusy}
                 onClick={() => track(job)}
               >
-                Track application
+                {isTracking ? <Spinner label="Tracking…" /> : "Track application"}
               </button>
             )}
             <button
@@ -324,7 +562,14 @@ export default function SearchTab({ profile, onOpenApplication }: Props) {
             />
           ))}
         </div>
-      ))}
+        );
+      })}
+      {viewingDocumentId != null && (
+        <DocumentViewer
+          documentId={viewingDocumentId}
+          onClose={() => setViewingDocumentId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import JobPosting, JobStatus, Profile
+from app.models import IgnoredWord, JobPosting, JobStatus, Profile
 from app.schemas import JobPostingOut, JobSearchRequest, JobStatusUpdate
 from app.services import matcher
 from app.services.sources import available_sources, search_all
@@ -33,8 +33,19 @@ async def search_jobs(
         return []
 
     profile: Profile | None = None
+    ignored_words: set[str] = set()
     if profile_id is not None:
         profile = await session.get(Profile, profile_id)
+        if profile is not None:
+            ignored_words = set(
+                (
+                    await session.scalars(
+                        select(IgnoredWord.word).where(
+                            IgnoredWord.profile_id == profile_id
+                        )
+                    )
+                ).all()
+            )
 
     stored: list[JobPosting] = []
     for job in found:
@@ -69,7 +80,9 @@ async def search_jobs(
         row = await session.get(JobPosting, job_id)
         if row is not None:
             if profile is not None:
-                row.match_score, row.match_notes = matcher.score_job(row, profile)
+                row.match_score, row.match_notes = matcher.score_job(
+                    row, profile, ignored_words
+                )
                 row.status = JobStatus.MATCHED
             stored.append(row)
 
@@ -93,6 +106,34 @@ async def list_jobs(
     stmt = stmt.order_by(JobPosting.match_score.desc().nullslast()).limit(limit)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+@router.post("/{job_id}/rescore", response_model=JobPostingOut)
+async def rescore_job(
+    job_id: int,
+    profile_id: int = Query(),
+    session: AsyncSession = Depends(get_session),
+) -> JobPosting:
+    job = await session.get(JobPosting, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    profile = await session.get(Profile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    ignored_words = set(
+        (
+            await session.scalars(
+                select(IgnoredWord.word).where(IgnoredWord.profile_id == profile_id)
+            )
+        ).all()
+    )
+    job.match_score, job.match_notes = matcher.score_job(
+        job, profile, ignored_words
+    )
+    await session.commit()
+    await session.refresh(job)
+    return job
 
 
 @router.get("/{job_id}", response_model=JobPostingOut)

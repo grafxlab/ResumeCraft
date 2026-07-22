@@ -18,20 +18,27 @@ export function matchStyle(score: number): {
     hue = 140;
     sat = 55;
     light = 72 - t * (72 - 26);
+    return {
+      background: `hsl(${hue}, ${sat}%, ${light}%)`,
+      color: "#ffffff",
+    };
   } else if (s >= 60) {
     const t = (s - 60) / 19; // 0 at 60 (lightest) → 1 at 79 (darkest)
     hue = 48;
     sat = 85;
     light = 82 - t * (82 - 42);
+    return {
+      background: `hsl(${hue}, ${sat}%, ${light}%)`,
+      color: "#111827",
+    };
   } else {
     const t = (59 - s) / 59; // 0 at 59 (lightest pink) → 1 at 0 (darkest red)
     hue = 350;
     sat = 70;
     light = 78 - t * (78 - 32);
+    return {
+      background: `hsl(${hue}, ${sat}%, ${light}%)`,
+      color: "#ffffff",
+    };
   }
-
-  return {
-    background: `hsl(${hue}, ${sat}%, ${light}%)`,
-    color: light < 55 ? "#ffffff" : "#111827",
-  };
 }

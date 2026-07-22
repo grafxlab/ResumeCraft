@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.models import Profile
-from app.schemas import ProfileCreate, ProfileOut
+from app.models import IgnoredWord, Profile
+from app.schemas import IgnoredWordCreate, IgnoredWordOut, ProfileCreate, ProfileOut
 from app.services import resume_parser
 from app.services.llm import LLMError
 
@@ -81,3 +81,64 @@ async def update_profile(
     await session.commit()
     await session.refresh(profile)
     return profile
+
+
+@router.get("/{profile_id}/ignored-words", response_model=list[IgnoredWordOut])
+async def list_ignored_words(
+    profile_id: int, session: AsyncSession = Depends(get_session)
+) -> list[IgnoredWord]:
+    result = await session.execute(
+        select(IgnoredWord)
+        .where(IgnoredWord.profile_id == profile_id)
+        .order_by(IgnoredWord.word)
+    )
+    return list(result.scalars().all())
+
+
+@router.post(
+    "/{profile_id}/ignored-words",
+    response_model=IgnoredWordOut,
+    status_code=201,
+)
+async def ignore_word(
+    profile_id: int,
+    payload: IgnoredWordCreate,
+    session: AsyncSession = Depends(get_session),
+) -> IgnoredWord:
+    if await session.get(Profile, profile_id) is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    word = payload.word.strip().lower()
+    if not word:
+        raise HTTPException(status_code=422, detail="Word cannot be empty")
+
+    existing = await session.scalar(
+        select(IgnoredWord).where(
+            IgnoredWord.profile_id == profile_id,
+            IgnoredWord.word == word,
+        )
+    )
+    if existing is not None:
+        return existing
+
+    ignored_word = IgnoredWord(profile_id=profile_id, word=word)
+    session.add(ignored_word)
+    await session.commit()
+    await session.refresh(ignored_word)
+    return ignored_word
+
+
+@router.delete("/{profile_id}/ignored-words/{word}", status_code=204)
+async def unignore_word(
+    profile_id: int,
+    word: str,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    await session.execute(
+        delete(IgnoredWord).where(
+            IgnoredWord.profile_id == profile_id,
+            IgnoredWord.word == word.strip().lower(),
+        )
+    )
+    await session.commit()
+    return Response(status_code=204)

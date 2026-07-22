@@ -34,6 +34,17 @@ class ProfileOut(ORMModel, ProfileBase):
     updated_at: datetime
 
 
+class IgnoredWordCreate(BaseModel):
+    word: str
+
+
+class IgnoredWordOut(ORMModel):
+    id: int
+    profile_id: int
+    word: str
+    created_at: datetime
+
+
 # ── Job postings ─────────────────────────────────────────
 class JobSearchRequest(BaseModel):
     query: str

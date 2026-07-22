@@ -107,11 +107,16 @@ export default function App() {
       ) : (
         <>
           {tab === "search" && (
-            <SearchTab profile={profile} onOpenApplication={openApplication} />
+            <SearchTab
+              profile={profile}
+              onProfileUpdated={setProfile}
+              onOpenApplication={openApplication}
+            />
           )}
           {tab === "applications" && (
             <ApplicationsTab
               focusJobId={focusJobId}
+              profileId={profile?.id}
               onFocusHandled={() => setFocusJobId(null)}
             />
           )}
