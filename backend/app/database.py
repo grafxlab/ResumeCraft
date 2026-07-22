@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import text
 
 from app.config import settings
 
@@ -32,3 +33,39 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all does not add columns to existing development tables.
+        await conn.execute(
+            text(
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
+                "resume_template_id INTEGER REFERENCES resume_templates(id) "
+                "ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_profiles_resume_template_id "
+                "ON profiles (resume_template_id)"
+            )
+        )
+        await conn.execute(
+            text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_content TEXT")
+        )
+        await conn.execute(
+            text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS rendered_html TEXT")
+        )
+        await conn.execute(
+            text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS additional_information TEXT")
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
+                "cover_letter_template_id INTEGER REFERENCES resume_templates(id) "
+                "ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE resume_templates ADD COLUMN IF NOT EXISTS "
+                "document_type VARCHAR(20) NOT NULL DEFAULT 'resume'"
+            )
+        )

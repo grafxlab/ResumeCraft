@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{FULL_NAME}} - Resume</title>
+  <style>
+    @page {
+      margin: 0.55in 0.65in;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      color: #1f2933;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      margin: 0 auto;
+      max-width: 8.5in;
+    }
+
+    .resume-header {
+      border-bottom: 2px solid #1d5e73;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+    }
+
+    h1 {
+      color: #173f4f;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 27pt;
+      font-weight: 600;
+      letter-spacing: 0;
+      line-height: 1.05;
+      margin: 0 0 7px;
+    }
+
+    .headline {
+      color: #48606a;
+      font-size: 11pt;
+      font-weight: 600;
+      margin: 0 0 7px;
+    }
+
+    .contact-info {
+      color: #40545c;
+      font-size: 9.5pt;
+      line-height: 1.55;
+    }
+
+    .contact-info a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .separator {
+      color: #8ba1a8;
+      padding: 0 5px;
+    }
+
+    section {
+      margin: 0 0 17px;
+    }
+
+    h2 {
+      border-bottom: 1px solid #a4b6bc;
+      color: #1d5e73;
+      font-size: 10.5pt;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      margin: 0 0 8px;
+      padding-bottom: 3px;
+      text-transform: uppercase;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    .skills-list {
+      margin: 0;
+      padding: 0;
+    }
+
+    .skills-list li {
+      display: inline;
+      list-style: none;
+    }
+
+    .skills-list li:not(:last-child)::after {
+      color: #7d9097;
+      content: " | ";
+    }
+
+    .employment-item,
+    .education-item {
+      break-inside: avoid;
+      margin: 0 0 13px;
+      page-break-inside: avoid;
+    }
+
+    .item-heading {
+      align-items: baseline;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+    }
+
+    .item-title {
+      color: #263d47;
+      font-size: 10.75pt;
+      font-weight: 700;
+    }
+
+    .item-date {
+      color: #526b75;
+      font-size: 9.5pt;
+      font-weight: 600;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .item-subtitle {
+      color: #526b75;
+      font-size: 10pt;
+      font-style: italic;
+      margin: 2px 0 5px;
+    }
+
+    ul {
+      margin: 5px 0 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 2px 0;
+    }
+
+    .additional-info {
+      column-count: 2;
+      column-gap: 28px;
+    }
+
+    .additional-info p {
+      break-inside: avoid;
+      margin-bottom: 6px;
+    }
+
+    @media print {
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="resume-header">
+    <h1>{{FULL_NAME}}</h1>
+    <p class="headline">{{PROFESSIONAL_HEADLINE}}</p>
+    <div class="contact-info">
+      <a href="mailto:{{EMAIL}}">{{EMAIL}}</a>
+      <span class="separator">|</span>
+      <span>{{PHONE}}</span>
+      <span class="separator">|</span>
+      <span>{{LOCATION}}</span>
+      <span class="separator">|</span>
+      <a href="{{LINKEDIN_URL}}">{{LINKEDIN_LABEL}}</a>
+      <span class="separator">|</span>
+      <a href="{{PORTFOLIO_URL}}">{{PORTFOLIO_LABEL}}</a>
+      <span class="separator">|</span>
+      <a href="{{ADDITIONAL_URL}}">{{ADDITIONAL_URL_LABEL}}</a>
+    </div>
+  </header>
+
+  <section>
+    <h2>Overview</h2>
+    <p>{{OVERVIEW}}</p>
+  </section>
+
+  <section>
+    <h2>Skills</h2>
+    <ul class="skills-list">
+      <!-- Repeat this element for each skill. -->
+      <li>{{SKILL}}</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Employment</h2>
+    <!-- Repeat this article for each position. -->
+    <article class="employment-item">
+      <div class="item-heading">
+        <span class="item-title">{{JOB_TITLE}}</span>
+        <span class="item-date">{{EMPLOYMENT_DATES}}</span>
+      </div>
+      <p class="item-subtitle">{{COMPANY}} | {{JOB_LOCATION}}</p>
+      <ul>
+        <!-- Repeat this element for each achievement. -->
+        <li>{{EMPLOYMENT_ACHIEVEMENT}}</li>
+      </ul>
+    </article>
+  </section>
+
+  <section>
+    <h2>Education</h2>
+    <!-- Repeat this article for each education entry. -->
+    <article class="education-item">
+      <div class="item-heading">
+        <span class="item-title">{{DEGREE_OR_CREDENTIAL}}</span>
+        <span class="item-date">{{EDUCATION_DATES}}</span>
+      </div>
+      <p class="item-subtitle">{{INSTITUTION}} | {{EDUCATION_LOCATION}}</p>
+      <p>{{EDUCATION_DETAILS}}</p>
+    </article>
+  </section>
+
+  <section>
+    <h2>Additional Information</h2>
+    <div class="additional-info">
+      <!-- Repeat paragraphs as needed for certifications, languages, awards, volunteer work, and other details. -->
+      <p><strong>{{ADDITIONAL_LABEL}}:</strong> {{ADDITIONAL_INFORMATION}}</p>
+    </div>
+  </section>
+</body>
+</html>

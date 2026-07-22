@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
+import { Eye, X } from "lucide-react";
 import { api } from "../api";
 import { matchStyle } from "../match";
-import type { ApplicationStatus, Document, JobPosting, Profile } from "../types";
+import type {
+  ApplicationStatus,
+  Document,
+  JobPosting,
+  Profile,
+} from "../types";
 import DocumentEditor from "./DocumentEditor";
-import DocumentViewer from "./DocumentViewer";
 import Spinner from "./Spinner";
 
 interface Props {
@@ -63,10 +68,14 @@ export default function SearchTab({
   const [ignoringWord, setIgnoringWord] = useState(false);
   const [addingWord, setAddingWord] = useState(false);
   const [viewingDocumentId, setViewingDocumentId] = useState<number | null>(null);
+  const [previewOnOpen, setPreviewOnOpen] = useState(false);
 
   const sourceNames = sources.map((source) =>
     source === "adzuna" ? "Adzuna" : source === "jsearch" ? "JSearch" : source,
   );
+  const editingDocument = viewingDocumentId == null
+    ? null
+    : Object.values(docs).flat().find((doc) => doc.id === viewingDocumentId) ?? null;
 
   useEffect(() => {
     localStorage.setItem("search.query", query);
@@ -110,6 +119,25 @@ export default function SearchTab({
       .then((r) => setAvailable(r.available))
       .catch(() => setAvailable([]));
   }, []);
+
+  useEffect(() => {
+    if (jobs.length === 0) return;
+    let active = true;
+    Promise.allSettled(
+      jobs.map(async (job) => [job.id, await api.listDocuments(job.id)] as const),
+    )
+      .then((results) => {
+        const documentsByJob = results
+          .filter((result): result is PromiseFulfilledResult<readonly [number, Document[]]> =>
+            result.status === "fulfilled",
+          )
+          .map((result) => result.value);
+        if (active) setDocs((current) => ({ ...current, ...Object.fromEntries(documentsByJob) }));
+      })
+    return () => {
+      active = false;
+    };
+  }, [jobs]);
 
   // Load which jobs are already tracked so their buttons show as "Tracked".
   useEffect(() => {
@@ -170,6 +198,7 @@ export default function SearchTab({
         ...prev,
         [job.id]: [...(prev[job.id] ?? []), doc],
       }));
+      setPreviewOnOpen(false);
       setViewingDocumentId(doc.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -281,6 +310,16 @@ export default function SearchTab({
     } finally {
       setAddingWord(false);
     }
+  };
+
+  const toggleDocumentPreview = (documentId: number) => {
+    if (viewingDocumentId === documentId) {
+      setPreviewOnOpen(false);
+      setViewingDocumentId(null);
+      return;
+    }
+    setPreviewOnOpen(true);
+    setViewingDocumentId(documentId);
   };
 
   return (
@@ -435,6 +474,13 @@ export default function SearchTab({
       )}
 
       {jobs.map((job) => {
+        const jobDocuments = docs[job.id] ?? [];
+        const resumeDocument = [...jobDocuments]
+          .reverse()
+          .find((document) => document.type === "resume");
+        const coverLetterDocument = [...jobDocuments]
+          .reverse()
+          .find((document) => document.type === "cover_letter");
         const keywords = matchKeywords(job.match_notes);
         const isJobBusy = busyAction?.jobId === job.id;
         const isGeneratingResume =
@@ -494,28 +540,54 @@ export default function SearchTab({
             job.match_notes && <p className="meta">{job.match_notes}</p>
           )}
           <div className="actions">
-            <button
-              className="btn secondary"
-              disabled={isJobBusy}
-              onClick={() => generate(job, "resume")}
-            >
-              {isGeneratingResume ? (
-                <Spinner label="Generating…" />
-              ) : (
-                "Generate resume"
+            <div className="generation-action">
+              <button
+                className="btn secondary"
+                disabled={isJobBusy}
+                onClick={() => generate(job, "resume")}
+              >
+                {isGeneratingResume ? (
+                  <Spinner label="Generating…" />
+                ) : (
+                  "Generate resume"
+                )}
+              </button>
+              {resumeDocument && (
+                <button
+                  className="icon-btn"
+                  aria-label={viewingDocumentId === resumeDocument.id ? "Hide resume preview" : "Show resume preview"}
+                  title={viewingDocumentId === resumeDocument.id ? "Hide resume preview" : "Show resume preview"}
+                  aria-pressed={viewingDocumentId === resumeDocument.id}
+                  onClick={() => toggleDocumentPreview(resumeDocument.id)}
+                >
+                  <Eye size={17} aria-hidden="true" />
+                </button>
               )}
-            </button>
-            <button
-              className="btn secondary"
-              disabled={isJobBusy}
-              onClick={() => generate(job, "cover")}
-            >
-              {isGeneratingCover ? (
-                <Spinner label="Generating…" />
-              ) : (
-                "Generate cover letter"
+            </div>
+            <div className="generation-action">
+              <button
+                className="btn secondary"
+                disabled={isJobBusy}
+                onClick={() => generate(job, "cover")}
+              >
+                {isGeneratingCover ? (
+                  <Spinner label="Generating…" />
+                ) : (
+                  "Generate cover letter"
+                )}
+              </button>
+              {coverLetterDocument && (
+                <button
+                  className="icon-btn"
+                  aria-label={viewingDocumentId === coverLetterDocument.id ? "Hide cover letter preview" : "Show cover letter preview"}
+                  title={viewingDocumentId === coverLetterDocument.id ? "Hide cover letter preview" : "Show cover letter preview"}
+                  aria-pressed={viewingDocumentId === coverLetterDocument.id}
+                  onClick={() => toggleDocumentPreview(coverLetterDocument.id)}
+                >
+                  <Eye size={17} aria-hidden="true" />
+                </button>
               )}
-            </button>
+            </div>
             {trackedJobIds.has(job.id) ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
@@ -546,29 +618,61 @@ export default function SearchTab({
               Dismiss
             </button>
           </div>
-          {(docs[job.id] ?? []).map((d) => (
-            <DocumentEditor
-              key={d.id}
-              doc={d}
-              profileId={profile?.id}
-              onChange={(updated) =>
-                setDocs((prev) => ({
-                  ...prev,
-                  [job.id]: (prev[job.id] ?? []).map((x) =>
-                    x.id === updated.id ? updated : x,
-                  ),
-                }))
-              }
-            />
-          ))}
         </div>
         );
       })}
       {viewingDocumentId != null && (
-        <DocumentViewer
-          documentId={viewingDocumentId}
-          onClose={() => setViewingDocumentId(null)}
-        />
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => {
+            setPreviewOnOpen(false);
+            setViewingDocumentId(null);
+          }}
+        >
+          <div
+            className="modal document-editor-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="document-editor-title">
+                {editingDocument?.type === "resume" ? "Resume editor" : "Cover letter editor"}
+              </strong>
+              <button
+                className="modal-close-btn"
+                aria-label="Close preview"
+                title="Close preview"
+                onClick={() => {
+                  setPreviewOnOpen(false);
+                  setViewingDocumentId(null);
+                }}
+              >
+                <X size={18} aria-hidden="true" />
+              </button>
+            </div>
+            {editingDocument && (
+              <DocumentEditor
+                compact
+                doc={editingDocument}
+                profileId={profile?.id}
+                initialPreview={previewOnOpen}
+                onChange={(updated) =>
+                  setDocs((current) => Object.fromEntries(
+                    Object.entries(current).map(([jobId, documents]) => [
+                      jobId,
+                      documents.map((document) =>
+                        document.id === updated.id ? updated : document,
+                      ),
+                    ]),
+                  ))
+                }
+              />
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

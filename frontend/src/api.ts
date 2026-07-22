@@ -1,17 +1,25 @@
 import type {
   Application,
   ApplicationStatus,
+  AuthSession,
+  AuthUser,
   Document,
   IgnoredWord,
   JobPosting,
   Profile,
+  ResumeTemplate,
 } from "./types";
 
 const BASE = "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("auth.token");
   const resp = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
     ...init,
   });
   if (!resp.ok) {
@@ -28,6 +36,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Authentication
+  signUp: (email: string, password: string) =>
+    request<{ message: string }>("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  confirmEmail: (token: string) => request<AuthSession>(`/auth/confirm?token=${encodeURIComponent(token)}`),
+  login: (email: string, password: string) =>
+    request<AuthSession>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  currentUser: () => request<AuthUser>("/auth/me"),
+  googleLoginUrl: () => `${BASE}/auth/google/login`,
+
   // Profiles
   listProfiles: () => request<Profile[]>("/profiles"),
   createProfile: (data: Partial<Profile>) =>
@@ -39,6 +62,15 @@ export const api = {
     request<Profile>(`/profiles/${id}`, {
       method: "PUT",
       body: JSON.stringify(data),
+    }),
+  updateProfileTemplate: (
+    id: number,
+    template_id: number | null,
+    document_type: "resume" | "cover_letter",
+  ) =>
+    request<Profile>(`/profiles/${id}/resume-template`, {
+      method: "PATCH",
+      body: JSON.stringify({ template_id, document_type }),
     }),
   listIgnoredWords: (profileId: number) =>
     request<IgnoredWord[]>(`/profiles/${profileId}/ignored-words`),
@@ -102,11 +134,44 @@ export const api = {
       method: "POST",
     }),
 
+  // Resume templates
+  listResumeTemplates: (documentType?: "resume" | "cover_letter") =>
+    request<ResumeTemplate[]>(
+      `/resume-templates${documentType ? `?document_type=${documentType}` : ""}`,
+    ),
+  createResumeTemplate: (
+    name: string,
+    content: string,
+    document_type: "resume" | "cover_letter",
+  ) =>
+    request<ResumeTemplate>("/resume-templates", {
+      method: "POST",
+      body: JSON.stringify({ name, content, document_type }),
+    }),
+  deleteResumeTemplate: async (id: number): Promise<void> => {
+    const resp = await fetch(`${BASE}/resume-templates/${id}`, {
+      method: "DELETE",
+      headers: {
+        ...(localStorage.getItem("auth.token")
+          ? { Authorization: `Bearer ${localStorage.getItem("auth.token")}` }
+          : {}),
+      },
+    });
+    if (!resp.ok && resp.status !== 204) {
+      throw new Error(`Unable to delete template (${resp.status})`);
+    }
+  },
+
   // Documents
-  generateResume: (job_id: number, profile_id: number, instructions?: string) =>
+  generateResume: (
+    job_id: number,
+    profile_id: number,
+    resume_template_id?: number,
+    instructions?: string,
+  ) =>
     request<Document>("/documents/resume", {
       method: "POST",
-      body: JSON.stringify({ job_id, profile_id, instructions }),
+      body: JSON.stringify({ job_id, profile_id, resume_template_id, instructions }),
     }),
   generateCoverLetter: (
     job_id: number,
@@ -119,11 +184,16 @@ export const api = {
     }),
   updateDocument: (
     id: number,
-    data: { content?: string; approved?: boolean },
+    data: { content?: string; approved?: boolean; profile_id?: number },
   ) =>
     request<Document>(`/documents/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    }),
+  previewDocument: (id: number, profile_id: number, content?: string) =>
+    request<{ rendered_html: string }>(`/documents/${id}/preview`, {
+      method: "POST",
+      body: JSON.stringify({ profile_id, content }),
     }),
   regenerateDocument: (
     id: number,

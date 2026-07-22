@@ -11,6 +11,47 @@ class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+# ── Authentication ───────────────────────────────────────
+class SignUpRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthUserOut(BaseModel):
+    id: int
+    email: str
+    is_email_verified: bool
+
+
+class AuthSessionOut(BaseModel):
+    token: str
+    user: AuthUserOut
+
+
+class MessageOut(BaseModel):
+    message: str
+
+
+class ResumeTemplateCreate(BaseModel):
+    name: str
+    content: str
+    document_type: str = "resume"
+
+
+class ResumeTemplateOut(ORMModel):
+    id: int
+    name: str
+    document_type: str
+    content: str
+    created_at: datetime
+    updated_at: datetime
+
+
 # ── Profile ──────────────────────────────────────────────
 class ProfileBase(BaseModel):
     full_name: str
@@ -18,14 +59,22 @@ class ProfileBase(BaseModel):
     phone: str | None = None
     location: str | None = None
     summary: str | None = None
+    additional_information: str | None = None
     skills: list = []
     experience: list = []
     education: list = []
     links: dict = {}
+    resume_template_id: int | None = None
+    cover_letter_template_id: int | None = None
 
 
 class ProfileCreate(ProfileBase):
     pass
+
+
+class ProfileTemplateUpdate(BaseModel):
+    template_id: int | None = None
+    document_type: str
 
 
 class ProfileOut(ORMModel, ProfileBase):
@@ -82,17 +131,29 @@ class JobStatusUpdate(BaseModel):
 class GenerateRequest(BaseModel):
     job_id: int
     profile_id: int
+    resume_template_id: int | None = None
     instructions: str | None = None
 
 
 class RegenerateRequest(BaseModel):
     profile_id: int
+    resume_template_id: int | None = None
     instructions: str | None = None
 
 
 class DocumentUpdate(BaseModel):
     content: str | None = None
     approved: bool | None = None
+    profile_id: int | None = None
+
+
+class DocumentPreviewRequest(BaseModel):
+    profile_id: int
+    content: str | None = None
+
+
+class DocumentPreviewOut(BaseModel):
+    rendered_html: str
 
 
 class DocumentOut(ORMModel):
@@ -100,6 +161,7 @@ class DocumentOut(ORMModel):
     job_id: int
     type: DocumentType
     content: str
+    rendered_html: str | None
     file_path: str | None
     approved: bool
     created_at: datetime

@@ -1,18 +1,29 @@
 import { useEffect, useState } from "react";
+import { CircleHelp } from "lucide-react";
 import { api } from "./api";
 import ApplicationsTab from "./components/ApplicationsTab";
+import AuthPage from "./components/AuthPage";
 import InfoPages, { type InfoPageName } from "./components/InfoPages";
+import LandingPage from "./components/LandingPage";
 import ProfileTab from "./components/ProfileTab";
 import SearchTab from "./components/SearchTab";
-import type { Profile } from "./types";
+import type { AuthSession, AuthUser, Profile } from "./types";
 
 type Tab = "profile" | "search" | "applications";
 type Theme = "dark" | "light";
+type View = "landing" | "auth" | "app";
 
 const APP_VERSION = "0.1.0";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("search");
+  const [view, setView] = useState<View>(() =>
+    localStorage.getItem("auth.token") ? "app" : "landing",
+  );
+  const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [focusJobId, setFocusJobId] = useState<number | null>(null);
   const [infoPage, setInfoPage] = useState<InfoPageName | null>(null);
@@ -24,6 +35,48 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  const completeAuthentication = (session: AuthSession) => {
+    localStorage.setItem("auth.token", session.token);
+    setAuthUser(session.user);
+    setAuthMessage(null);
+    setView("app");
+  };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const confirmationToken = params.get("confirm_token");
+    const authToken = params.get("auth_token");
+    if (authToken) {
+      localStorage.setItem("auth.token", authToken);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (confirmationToken) {
+      window.history.replaceState({}, "", window.location.pathname);
+      api
+        .confirmEmail(confirmationToken)
+        .then(completeAuthentication)
+        .catch((error) => {
+          setAuthMessage(error instanceof Error ? error.message : String(error));
+          setAuthMode("login");
+          setView("auth");
+        });
+      return;
+    }
+    const token = localStorage.getItem("auth.token");
+    if (token) {
+      api
+        .currentUser()
+        .then((user) => {
+          setAuthUser(user);
+          setView("app");
+        })
+        .catch(() => {
+          localStorage.removeItem("auth.token");
+          setView("landing");
+        });
+    }
+  }, []);
 
   useEffect(() => {
     api
@@ -47,6 +100,43 @@ export default function App() {
     setTab(t);
   };
 
+  const signOut = () => {
+    localStorage.removeItem("auth.token");
+    setAuthUser(null);
+    setProfile(null);
+    setProfileMenuOpen(false);
+    setView("landing");
+  };
+
+  if (view === "landing") {
+    return (
+      <LandingPage
+        onStart={() => {
+          setAuthMode("signup");
+          setAuthMessage(null);
+          setView("auth");
+        }}
+        onLogin={() => {
+          setAuthMode("login");
+          setAuthMessage(null);
+          setView("auth");
+        }}
+      />
+    );
+  }
+
+  if (view === "auth") {
+    return (
+      <AuthPage
+        mode={authMode}
+        message={authMessage}
+        onModeChange={setAuthMode}
+        onAuthenticated={completeAuthentication}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <div className="app-header">
@@ -65,7 +155,7 @@ export default function App() {
             alt="ResumeCraft logo"
             className="app-logo"
           />
-          <h1><span className="brandTitle1">Resume</span><span className="brandTitle2">Craft</span></h1>
+          <h1><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></h1>
         </div>
         <button
           className="btn secondary theme-toggle"
@@ -75,12 +165,37 @@ export default function App() {
         >
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
+        <button
+          className="btn secondary help-button"
+          onClick={() => {
+            setInfoPage("support");
+            setProfileMenuOpen(false);
+          }}
+          title="Help"
+          aria-label="Open Help"
+        >
+          <CircleHelp size={20} aria-hidden="true" />
+        </button>
+        <div className="profile-menu">
+          <button
+            className="profile-trigger"
+            aria-expanded={profileMenuOpen}
+            aria-label="Open profile menu"
+            onClick={() => setProfileMenuOpen((open) => !open)}
+          >
+            <span className="profile-initial">{authUser?.email.slice(0, 1).toUpperCase() ?? "P"}</span>
+          </button>
+          {profileMenuOpen && (
+            <div className="profile-dropdown">
+              <p>{authUser?.email}</p>
+              <button onClick={() => { selectTab("profile"); setProfileMenuOpen(false); }}>
+                View Profile
+              </button>
+              <button onClick={signOut}>Sign Out</button>
+            </div>
+          )}
+        </div>
       </div>
-      <p className="meta">
-        {profile
-          ? `Active profile: ${profile.full_name}`
-          : "No profile yet — create one in the Profile tab."}
-      </p>
       <div className="tabs">
         <button
           className={`tab ${tab === "search" && !infoPage ? "active" : ""}`}
@@ -103,7 +218,11 @@ export default function App() {
       </div>
 
       {infoPage ? (
-        <InfoPages page={infoPage} onBack={() => setInfoPage(null)} />
+        <InfoPages
+          page={infoPage}
+          onBack={() => setInfoPage(null)}
+          onNavigate={setInfoPage}
+        />
       ) : (
         <>
           {tab === "search" && (
@@ -134,6 +253,9 @@ export default function App() {
           </div>
         </div>
         <nav className="footer-links">
+          <button className="link-btn" onClick={() => setInfoPage("templates")}>
+            Resume Templates
+          </button>
           <button className="link-btn" onClick={() => setInfoPage("support")}>
             Support
           </button>

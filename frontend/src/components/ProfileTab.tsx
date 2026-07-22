@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { IgnoredWord, Profile } from "../types";
+import type { IgnoredWord, Profile, ResumeTemplate } from "../types";
 import Spinner from "./Spinner";
 
 interface Props {
@@ -14,6 +14,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
   const [summary, setSummary] = useState("");
+  const [additionalInformation, setAdditionalInformation] = useState("");
   const [skills, setSkills] = useState("");
   const [experience, setExperience] = useState("[]");
   const [education, setEducation] = useState("[]");
@@ -24,8 +25,21 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [showUpdatedDialog, setShowUpdatedDialog] = useState(false);
   const [ignoredWords, setIgnoredWords] = useState<IgnoredWord[]>([]);
   const [unignoringWord, setUnignoringWord] = useState<string | null>(null);
+  const [ignoredKeywordsExpanded, setIgnoredKeywordsExpanded] = useState(
+    () => localStorage.getItem("profile.ignoredKeywordsExpanded") !== "false",
+  );
   const [links, setLinks] = useState<Record<string, string>>({});
+  const [resumeTemplates, setResumeTemplates] = useState<ResumeTemplate[]>([]);
+  const [coverLetterTemplates, setCoverLetterTemplates] = useState<ResumeTemplate[]>([]);
+  const [resumeTemplateId, setResumeTemplateId] = useState<number | null>(null);
+  const [coverLetterTemplateId, setCoverLetterTemplateId] = useState<number | null>(null);
+  const [templatesExpanded, setTemplatesExpanded] = useState(
+    () => localStorage.getItem("profile.templatesExpanded") !== "false",
+  );
+  const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const templateFileRef = useRef<HTMLInputElement>(null);
+  const coverLetterTemplateFileRef = useRef<HTMLInputElement>(null);
 
   const applyData = (data: Partial<Profile>) => {
     if (data.full_name != null) setFullName(data.full_name);
@@ -33,12 +47,21 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (data.phone != null) setPhone(data.phone);
     if (data.location != null) setLocation(data.location);
     if (data.summary != null) setSummary(data.summary);
+    if (data.additional_information != null) {
+      setAdditionalInformation(data.additional_information);
+    }
     if (data.skills != null) setSkills(data.skills.join(", "));
     if (data.experience != null)
       setExperience(JSON.stringify(data.experience, null, 2));
     if (data.education != null)
       setEducation(JSON.stringify(data.education, null, 2));
     if (data.links != null) setLinks(data.links);
+    if (data.resume_template_id !== undefined) {
+      setResumeTemplateId(data.resume_template_id);
+    }
+    if (data.cover_letter_template_id !== undefined) {
+      setCoverLetterTemplateId(data.cover_letter_template_id);
+    }
   };
 
   useEffect(() => {
@@ -56,6 +79,11 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     });
   }, [profile]);
 
+  useEffect(() => {
+    api.listResumeTemplates("resume").then(setResumeTemplates).catch(() => setResumeTemplates([]));
+    api.listResumeTemplates("cover_letter").then(setCoverLetterTemplates).catch(() => setCoverLetterTemplates([]));
+  }, []);
+
   const unignoreWord = async (word: string) => {
     if (!profile) return;
     setUnignoringWord(word);
@@ -67,6 +95,14 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     } finally {
       setUnignoringWord(null);
     }
+  };
+
+  const toggleIgnoredKeywords = () => {
+    setIgnoredKeywordsExpanded((expanded) => {
+      const next = !expanded;
+      localStorage.setItem("profile.ignoredKeywordsExpanded", String(next));
+      return next;
+    });
   };
 
   const importResume = async (file: File) => {
@@ -87,6 +123,85 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     }
   };
 
+  const uploadTemplate = async (
+    file: File | undefined,
+    documentType: "resume" | "cover_letter",
+  ) => {
+    if (!file) return;
+    if (!/\.(html?|md|txt)$/i.test(file.name)) {
+      setError("Upload an HTML, Markdown, or text template.");
+      return;
+    }
+    if (file.size > 250_000) {
+      setError("Template files must be 250 KB or smaller.");
+      return;
+    }
+    setUploadingTemplate(true);
+    setError(null);
+    try {
+      const content = await file.text();
+      const placeholders = new Set(
+        [...content.matchAll(/{{\s*([A-Z][A-Z0-9_]*)\s*}}/g)].map(
+          (match) => match[1],
+        ),
+      );
+      const supported = (documentType === "resume"
+        ? ["FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION", "OVERVIEW", "SKILL", "JOB_TITLE", "COMPANY", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT", "DEGREE_OR_CREDENTIAL", "INSTITUTION"]
+        : ["FULL_NAME", "EMAIL", "PHONE", "LOCATION", "DATE", "RECIPIENT_NAME", "COMPANY", "SALUTATION", "CLOSING", "LETTER_BODY", "DOCUMENT_CONTENT"]
+      ).filter((placeholder) => placeholders.has(placeholder));
+      if (supported.length < 3) {
+        throw new Error(
+          "Templates need at least three supported placeholders for the selected document type.",
+        );
+      }
+      const name = file.name.replace(/\.(html?|md|txt)$/i, "") || "Document template";
+      const template = await api.createResumeTemplate(name, content, documentType);
+      if (documentType === "resume") {
+        setResumeTemplates((current) => [template, ...current]);
+        setResumeTemplateId(template.id);
+      } else {
+        setCoverLetterTemplates((current) => [template, ...current]);
+        setCoverLetterTemplateId(template.id);
+      }
+      if (profile) {
+        const updated = await api.updateProfileTemplate(profile.id, template.id, documentType);
+        onSaved(updated);
+        setNotice(`${template.name} is now your default ${documentType === "resume" ? "resume" : "cover letter"} template.`);
+      } else {
+        setNotice(`Template uploaded. Create your profile to use ${template.name} by default.`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploadingTemplate(false);
+      const fileInput = documentType === "resume" ? templateFileRef : coverLetterTemplateFileRef;
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const selectTemplate = async (
+    templateId: number | null,
+    documentType: "resume" | "cover_letter",
+  ) => {
+    if (documentType === "resume") setResumeTemplateId(templateId);
+    else setCoverLetterTemplateId(templateId);
+    if (!profile) return;
+    setError(null);
+    try {
+      const updated = await api.updateProfileTemplate(profile.id, templateId, documentType);
+      onSaved(updated);
+      setNotice(
+        templateId == null
+          ? `Default ${documentType === "resume" ? "resume" : "cover letter"} template restored.`
+          : `Default ${documentType === "resume" ? "resume" : "cover letter"} template updated.`,
+      );
+    } catch (e) {
+      if (documentType === "resume") setResumeTemplateId(profile.resume_template_id);
+      else setCoverLetterTemplateId(profile.cover_letter_template_id);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const save = async () => {
     setError(null);
     setSaving(true);
@@ -97,6 +212,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         phone: phone || null,
         location: location || null,
         summary: summary || null,
+        additional_information: additionalInformation || null,
         skills: skills
           .split(",")
           .map((s) => s.trim())
@@ -104,6 +220,8 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         experience: JSON.parse(experience || "[]"),
         education: JSON.parse(education || "[]"),
         links: { ...(profile?.links ?? {}), ...links },
+        resume_template_id: resumeTemplateId,
+        cover_letter_template_id: coverLetterTemplateId,
       };
       const saved = profile
         ? await api.updateProfile(profile.id, payload)
@@ -210,29 +328,120 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       />
       <label>Education (JSON array)</label>
       <textarea value={education} onChange={(e) => setEducation(e.target.value)} />
+      <label>Additional information</label>
+      <textarea
+        value={additionalInformation}
+        placeholder="Certifications, languages, awards, volunteer work, or other relevant details"
+        onChange={(e) => setAdditionalInformation(e.target.value)}
+      />
+      <div
+        className="panel profile-template"
+        style={{ background: "var(--bg)", marginTop: 16, marginBottom: 0 }}
+      >
+        <button
+          className="section-toggle"
+          aria-expanded={templatesExpanded}
+          onClick={() => setTemplatesExpanded((expanded) => {
+            const next = !expanded;
+            localStorage.setItem("profile.templatesExpanded", String(next));
+            return next;
+          })}
+        >
+          <strong>Templates</strong>
+          <span aria-hidden="true">{templatesExpanded ? "Hide" : "Show"}</span>
+        </button>
+        {templatesExpanded && (
+          <>
+            <p className="meta">Select a default or upload a custom template for each document type.</p>
+            <label>Resume template</label>
+            <div className="profile-template-controls">
+              <select
+                aria-label="Default resume template"
+                value={resumeTemplateId ?? ""}
+                onChange={(event) => void selectTemplate(
+                  event.target.value ? Number(event.target.value) : null,
+                  "resume",
+                )}
+              >
+                <option value="">Default resume template</option>
+                {resumeTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+              <label className="btn secondary template-upload">
+                {uploadingTemplate ? "Uploading..." : "Upload resume template"}
+                <input
+                  ref={templateFileRef}
+                  type="file"
+                  accept=".html,.htm,.md,.txt,text/html,text/plain,text/markdown"
+                  disabled={uploadingTemplate}
+                  onChange={(event) => void uploadTemplate(event.target.files?.[0], "resume")}
+                />
+              </label>
+            </div>
+            <label>Cover letter template</label>
+            <div className="profile-template-controls">
+              <select
+                aria-label="Default cover letter template"
+                value={coverLetterTemplateId ?? ""}
+                onChange={(event) => void selectTemplate(
+                  event.target.value ? Number(event.target.value) : null,
+                  "cover_letter",
+                )}
+              >
+                <option value="">Default cover letter template</option>
+                {coverLetterTemplates.map((template) => (
+                  <option key={template.id} value={template.id}>{template.name}</option>
+                ))}
+              </select>
+              <label className="btn secondary template-upload">
+                {uploadingTemplate ? "Uploading..." : "Upload cover letter template"}
+                <input
+                  ref={coverLetterTemplateFileRef}
+                  type="file"
+                  accept=".html,.htm,.md,.txt,text/html,text/plain,text/markdown"
+                  disabled={uploadingTemplate}
+                  onChange={(event) => void uploadTemplate(event.target.files?.[0], "cover_letter")}
+                />
+              </label>
+            </div>
+          </>
+        )}
+      </div>
       {profile && (
         <div
           className="panel"
           style={{ background: "var(--bg)", marginTop: 16, marginBottom: 0 }}
         >
-          <strong>Ignored match keywords</strong>
-          {ignoredWords.length === 0 ? (
-            <p className="meta">No ignored keywords.</p>
-          ) : (
-            <div className="actions" style={{ marginTop: 10 }}>
-              {ignoredWords.map((item) => (
-                <button
-                  key={item.id}
-                  className="btn secondary"
-                  disabled={unignoringWord === item.word}
-                  onClick={() => unignoreWord(item.word)}
-                >
-                  {unignoringWord === item.word
-                    ? `Removing ${item.word}...`
-                    : `Un-ignore ${item.word}`}
-                </button>
-              ))}
-            </div>
+          <button
+            className="section-toggle"
+            aria-expanded={ignoredKeywordsExpanded}
+            onClick={toggleIgnoredKeywords}
+          >
+            <strong>Ignored Keywords</strong>
+            <span aria-hidden="true">{ignoredKeywordsExpanded ? "Hide" : "Show"}</span>
+          </button>
+          {ignoredKeywordsExpanded && (
+            ignoredWords.length === 0 ? (
+              <p className="meta">No ignored keywords.</p>
+            ) : (
+              <div className="actions" style={{ marginTop: 10 }}>
+                {ignoredWords.map((item) => (
+                  <button
+                    key={item.id}
+                    className="btn secondary ignored-keyword"
+                    disabled={unignoringWord === item.word}
+                    onClick={() => unignoreWord(item.word)}
+                    aria-label="Remove Keyword"
+                    title="Remove Keyword"
+                  >
+                    {unignoringWord === item.word
+                      ? "Removing..."
+                      : <><span>{item.word}</span><span className="ignored-keyword-remove" aria-hidden="true">x</span></>}
+                  </button>
+                ))}
+              </div>
+            )
           )}
         </div>
       )}

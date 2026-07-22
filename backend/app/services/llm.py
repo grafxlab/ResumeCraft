@@ -14,11 +14,16 @@ async def complete(system: str, prompt: str, max_tokens: int = 1500) -> str:
     """
     provider = settings.llm_provider.lower()
 
-    if provider == "openai":
-        return await _openai_complete(system, prompt, max_tokens)
-    if provider == "anthropic":
-        return await _anthropic_complete(system, prompt, max_tokens)
-    raise LLMError(f"Unknown LLM provider: {provider}")
+    try:
+        if provider == "openai":
+            return await _openai_complete(system, prompt, max_tokens)
+        if provider == "anthropic":
+            return await _anthropic_complete(system, prompt, max_tokens)
+        raise LLMError(f"Unknown LLM provider: {provider}")
+    except LLMError:
+        raise
+    except Exception as exc:  # Provider SDKs use distinct exception hierarchies.
+        raise LLMError(f"{provider.title()} request failed: {exc}") from exc
 
 
 async def _openai_complete(system: str, prompt: str, max_tokens: int) -> str:

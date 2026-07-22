@@ -4,13 +4,39 @@ from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.auth import current_user
 from app.database import get_session
-from app.models import IgnoredWord, Profile
-from app.schemas import IgnoredWordCreate, IgnoredWordOut, ProfileCreate, ProfileOut
+from app.models import IgnoredWord, Profile, ResumeTemplate, User
+from app.schemas import (
+    IgnoredWordCreate,
+    IgnoredWordOut,
+    ProfileCreate,
+    ProfileOut,
+    ProfileTemplateUpdate,
+)
 from app.services import resume_parser
 from app.services.llm import LLMError
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
+
+
+async def _validate_resume_template(
+    template_id: int | None,
+    document_type: str,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    if template_id is None:
+        return
+    template = await session.scalar(
+        select(ResumeTemplate).where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.user_id == user.id,
+            ResumeTemplate.document_type == document_type,
+        )
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Resume template not found")
 
 
 @router.post("/parse-resume", response_model=ProfileCreate)
@@ -42,8 +68,14 @@ async def parse_resume(file: UploadFile) -> ProfileCreate:
 
 @router.post("", response_model=ProfileOut, status_code=201)
 async def create_profile(
-    payload: ProfileCreate, session: AsyncSession = Depends(get_session)
+    payload: ProfileCreate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> Profile:
+    await _validate_resume_template(payload.resume_template_id, "resume", user, session)
+    await _validate_resume_template(
+        payload.cover_letter_template_id, "cover_letter", user, session
+    )
     profile = Profile(**payload.model_dump())
     session.add(profile)
     await session.commit()
@@ -71,13 +103,42 @@ async def get_profile(
 async def update_profile(
     profile_id: int,
     payload: ProfileCreate,
+    user: User = Depends(current_user),
     session: AsyncSession = Depends(get_session),
 ) -> Profile:
     profile = await session.get(Profile, profile_id)
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
+    await _validate_resume_template(payload.resume_template_id, "resume", user, session)
+    await _validate_resume_template(
+        payload.cover_letter_template_id, "cover_letter", user, session
+    )
     for key, value in payload.model_dump().items():
         setattr(profile, key, value)
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+@router.patch("/{profile_id}/resume-template", response_model=ProfileOut)
+async def update_resume_template(
+    profile_id: int,
+    payload: ProfileTemplateUpdate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Profile:
+    profile = await session.get(Profile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    if payload.document_type not in {"resume", "cover_letter"}:
+        raise HTTPException(status_code=422, detail="Invalid template type")
+    await _validate_resume_template(
+        payload.template_id, payload.document_type, user, session
+    )
+    if payload.document_type == "resume":
+        profile.resume_template_id = payload.template_id
+    else:
+        profile.cover_letter_template_id = payload.template_id
     await session.commit()
     await session.refresh(profile)
     return profile

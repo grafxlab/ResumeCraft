@@ -50,6 +50,36 @@ class TimestampMixin:
     )
 
 
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    is_email_verified: Mapped[bool] = mapped_column(default=False)
+    google_subject: Mapped[str | None] = mapped_column(
+        String(255), unique=True, index=True
+    )
+
+    resume_templates: Mapped[list[ResumeTemplate]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class ResumeTemplate(Base, TimestampMixin):
+    __tablename__ = "resume_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(120))
+    document_type: Mapped[str] = mapped_column(String(20), default="resume", index=True)
+    content: Mapped[str] = mapped_column(Text)
+
+    user: Mapped[User] = relationship(back_populates="resume_templates")
+
+
 class Profile(Base, TimestampMixin):
     """The user's master profile — the single source of truth for tailoring."""
 
@@ -61,11 +91,25 @@ class Profile(Base, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(50))
     location: Mapped[str | None] = mapped_column(String(200))
     summary: Mapped[str | None] = mapped_column(Text)
+    additional_information: Mapped[str | None] = mapped_column(Text)
     # Structured data used to build tailored documents.
     skills: Mapped[list] = mapped_column(JSONB, default=list)
     experience: Mapped[list] = mapped_column(JSONB, default=list)
     education: Mapped[list] = mapped_column(JSONB, default=list)
     links: Mapped[dict] = mapped_column(JSONB, default=dict)
+    resume_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resume_templates.id", ondelete="SET NULL"), index=True
+    )
+    cover_letter_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("resume_templates.id", ondelete="SET NULL"), index=True
+    )
+
+    resume_template: Mapped[ResumeTemplate | None] = relationship(
+        foreign_keys=[resume_template_id]
+    )
+    cover_letter_template: Mapped[ResumeTemplate | None] = relationship(
+        foreign_keys=[cover_letter_template_id]
+    )
 
 
 class IgnoredWord(Base, TimestampMixin):
@@ -126,6 +170,8 @@ class Document(Base, TimestampMixin):
     )
     type: Mapped[DocumentType] = mapped_column(Enum(DocumentType), index=True)
     content: Mapped[str] = mapped_column(Text)
+    template_content: Mapped[str | None] = mapped_column(Text)
+    rendered_html: Mapped[str | None] = mapped_column(Text)
     file_path: Mapped[str | None] = mapped_column(Text)
     approved: Mapped[bool] = mapped_column(default=False)
 

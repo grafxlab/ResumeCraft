@@ -61,7 +61,10 @@ def _with_instructions(prompt: str, instructions: str | None = None) -> str:
 
 
 async def generate_resume(
-    job: JobPosting, profile: Profile, instructions: str | None = None
+    job: JobPosting,
+    profile: Profile,
+    instructions: str | None = None,
+    template_content: str | None = None,
 ) -> str:
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
@@ -69,16 +72,30 @@ async def generate_resume(
         "TARGET JOB:\n"
         f"{_job_payload(job)}\n\n"
         "Produce a tailored, ATS-friendly resume in Markdown. Include: header "
-        "with contact info, a tailored summary, skills relevant to this job, and "
+        "with contact info, a tailored summary, no more than 10 skills ordered by "
+        "relevance to this job, and "
         "experience with achievement-focused bullets reordered for relevance."
     )
+    if template_content:
+        prompt += (
+            "\n\nSELECTED RESUME TEMPLATE:\n"
+            f"{template_content}\n\n"
+            "Use this template's section ordering, headings, and visual intent as "
+            "the formatting guide. The template supplies the candidate header and "
+            "contact details, so do not repeat them in the Markdown. Return Markdown "
+            "only, not HTML or placeholder tokens, so the result remains editable and "
+            "exportable."
+        )
     return await llm.complete(
         RESUME_SYSTEM, _with_instructions(prompt, instructions), max_tokens=2000
     )
 
 
 async def generate_cover_letter(
-    job: JobPosting, profile: Profile, instructions: str | None = None
+    job: JobPosting,
+    profile: Profile,
+    instructions: str | None = None,
+    template_content: str | None = None,
 ) -> str:
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
@@ -89,6 +106,15 @@ async def generate_cover_letter(
         "company. Reference specific requirements from the job and connect them "
         "to real experience from the profile."
     )
+    if template_content:
+        prompt += (
+            "\n\nCOVER LETTER TEMPLATE:\n"
+            f"{template_content}\n\n"
+            "Use this template's sections, tone, and visual intent as the formatting "
+            "guide. The template supplies the candidate header and contact details, "
+            "so do not repeat them in the Markdown. Return Markdown only, not HTML or "
+            "placeholder tokens, so the result remains editable and exportable."
+        )
     return await llm.complete(
         COVER_LETTER_SYSTEM,
         _with_instructions(prompt, instructions),

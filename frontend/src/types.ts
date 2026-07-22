@@ -15,6 +15,17 @@ export type ApplicationStatus =
   | "rejected"
   | "no_response";
 
+export interface AuthUser {
+  id: number;
+  email: string;
+  is_email_verified: boolean;
+}
+
+export interface AuthSession {
+  token: string;
+  user: AuthUser;
+}
+
 export interface Profile {
   id: number;
   full_name: string;
@@ -22,10 +33,13 @@ export interface Profile {
   phone: string | null;
   location: string | null;
   summary: string | null;
+  additional_information: string | null;
   skills: string[];
   experience: unknown[];
   education: unknown[];
   links: Record<string, string>;
+  resume_template_id: number | null;
+  cover_letter_template_id: number | null;
 }
 
 export interface IgnoredWord {
@@ -33,6 +47,15 @@ export interface IgnoredWord {
   profile_id: number;
   word: string;
   created_at: string;
+}
+
+export interface ResumeTemplate {
+  id: number;
+  name: string;
+  document_type: "resume" | "cover_letter";
+  content: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface JobPosting {
@@ -61,6 +84,7 @@ export interface Document {
   job_id: number;
   type: DocumentType;
   content: string;
+  rendered_html: string | null;
   file_path: string | null;
   approved: boolean;
   created_at: string;

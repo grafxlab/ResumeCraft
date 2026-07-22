@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import applications, documents, jobs, profiles
+from app.api.routes import applications, auth, documents, jobs, profiles, templates
 from app.config import settings
 from app.database import init_db
 
@@ -27,6 +27,8 @@ app.add_middleware(
 )
 
 app.include_router(profiles.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(templates.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(applications.router, prefix="/api")

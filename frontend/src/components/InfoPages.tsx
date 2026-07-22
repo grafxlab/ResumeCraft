@@ -1,18 +1,25 @@
-export type InfoPageName = "support" | "privacy" | "terms" | "about";
+export type InfoPageName =
+  | "support"
+  | "templates"
+  | "privacy"
+  | "terms"
+  | "about";
 
 interface Props {
   page: InfoPageName;
   onBack: () => void;
+  onNavigate: (page: InfoPageName) => void;
 }
 
 const TITLES: Record<InfoPageName, string> = {
   support: "Support",
+  templates: "Resume Templates",
   privacy: "Privacy Policy",
   terms: "Terms of Service",
   about: "About ResumeCraft",
 };
 
-export default function InfoPages({ page, onBack }: Props) {
+export default function InfoPages({ page, onBack, onNavigate }: Props) {
   return (
     <div className="panel info-page">
       <button className="btn secondary" onClick={onBack}>
@@ -20,7 +27,8 @@ export default function InfoPages({ page, onBack }: Props) {
       </button>
       <h2>{TITLES[page]}</h2>
       {page === "about" && <About />}
-      {page === "support" && <Support />}
+      {page === "support" && <Support onNavigate={onNavigate} />}
+      {page === "templates" && <ResumeTemplates />}
       {page === "privacy" && <Privacy />}
       {page === "terms" && <Terms />}
     </div>
@@ -68,11 +76,17 @@ function About() {
   );
 }
 
-function Support() {
+function Support({ onNavigate }: Pick<Props, "onNavigate">) {
   return (
     <div className="prose">
       <p>Need help using ResumeCraft?</p>
       <ul>
+        <li>
+          <button className="link-btn info-link" onClick={() => onNavigate("templates")}>
+            Create and use resume templates
+          </button>
+          .
+        </li>
         <li>
           Email us at <a href="mailto:support@gl2.example">support@gl2.example</a>
           .
@@ -85,6 +99,58 @@ function Support() {
       <p className="meta">
         When reporting an issue, include what you were doing and any error
         message shown on screen.
+      </p>
+    </div>
+  );
+}
+
+function ResumeTemplates() {
+  return (
+    <div className="prose">
+      <p>
+        A resume template is a standalone HTML, Markdown, or text document that
+        guides the section order and presentation of a tailored resume. Upload it
+        from Search Job Boards, select it from the Resume template control, then
+        generate a resume. Your saved templates stay private to your account.
+      </p>
+
+      <h3>Start with the example</h3>
+      <p>
+        Use <a href="/templates/resume-template-1.html" target="_blank" rel="noreferrer">resume-template-1.html</a>{" "}
+        as the starting point. It includes print-ready CSS, semantic sections,
+        and examples of repeating skills, employment, and education content.
+      </p>
+
+      <h3>Use clear section labels</h3>
+      <p>
+        Use descriptive headings for the content you want in the generated
+        resume, such as Summary, Skills, Experience, Education, and
+        Certifications. The generator uses your profile as the source of truth
+        and keeps the result editable in the document editor.
+      </p>
+
+      <h3>Repeat data-driven blocks</h3>
+      <p>
+        Keep skills, roles, achievements, and credentials in clearly separated
+        blocks. The generator can then preserve the intended grouping while
+        tailoring the content for each position.
+      </p>
+
+      <h3>Keep the required sections</h3>
+      <ul>
+        <li><strong>Overview:</strong> a short professional summary.</li>
+        <li><strong>Skills:</strong> relevant skills for the target position.</li>
+        <li><strong>Employment:</strong> role, employer, dates, and achievement bullets.</li>
+        <li><strong>Education:</strong> degree, institution, dates, and details.</li>
+        <li><strong>Additional information:</strong> certifications, languages, awards, or volunteer work.</li>
+      </ul>
+
+      <h3>Design for print</h3>
+      <p>
+        Include all CSS inside the HTML file, use <code>@page</code> for print
+        margins, and avoid scripts or remote assets. Prefer clean type, clear
+        section headings, and simple layouts that remain readable when saved as
+        a PDF.
       </p>
     </div>
   );

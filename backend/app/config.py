@@ -29,6 +29,16 @@ class Settings(BaseSettings):
 
     # App
     cors_origins: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:5173"
+    auth_secret_key: str = "change-this-development-secret"
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+    smtp_use_tls: bool = True
+    google_client_id: str = ""
+    google_client_secret: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

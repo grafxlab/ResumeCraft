@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api";
 import { renderMarkdown } from "../pdf";
 import type { Document } from "../types";
@@ -8,25 +8,58 @@ interface Props {
   doc: Document;
   profileId: number | undefined;
   onChange: (doc: Document) => void;
+  compact?: boolean;
+  initialPreview?: boolean;
 }
 
-export default function DocumentEditor({ doc, profileId, onChange }: Props) {
+export default function DocumentEditor({
+  doc,
+  profileId,
+  onChange,
+  compact = false,
+  initialPreview = false,
+}: Props) {
   const [content, setContent] = useState(doc.content);
   const [instructions, setInstructions] = useState("");
   const [busy, setBusy] = useState<"save" | "approve" | "regen" | "pdf" | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState(false);
+  const [preview, setPreview] = useState(initialPreview);
+  const [previewHtml, setPreviewHtml] = useState(doc.rendered_html);
+  const [loadingPreview, setLoadingPreview] = useState(false);
 
   const dirty = content !== doc.content;
   const label = doc.type === "resume" ? "Resume" : "Cover letter";
+
+  useEffect(() => {
+    if (!preview || !profileId) return;
+    let active = true;
+    setLoadingPreview(true);
+    setError(null);
+    api
+      .previewDocument(doc.id, profileId, content)
+      .then(({ rendered_html }) => {
+        if (active) setPreviewHtml(rendered_html);
+      })
+      .catch((previewError) => {
+        if (active) {
+          setError(previewError instanceof Error ? previewError.message : String(previewError));
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingPreview(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [preview, doc.id, profileId]);
 
   const save = async () => {
     setBusy("save");
     setError(null);
     try {
-      onChange(await api.updateDocument(doc.id, { content }));
+      onChange(await api.updateDocument(doc.id, { content, profile_id: profileId }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -42,6 +75,7 @@ export default function DocumentEditor({ doc, profileId, onChange }: Props) {
       const updated = await api.updateDocument(doc.id, {
         content: dirty ? content : undefined,
         approved: !doc.approved,
+        profile_id: profileId,
       });
       setContent(updated.content);
       onChange(updated);
@@ -83,7 +117,7 @@ export default function DocumentEditor({ doc, profileId, onChange }: Props) {
     try {
       // Ensure the PDF reflects any unsaved edits.
       if (dirty) {
-        onChange(await api.updateDocument(doc.id, { content }));
+        onChange(await api.updateDocument(doc.id, { content, profile_id: profileId }));
       }
       const blob = await api.downloadDocumentPdf(doc.id);
       const url = URL.createObjectURL(blob);
@@ -103,8 +137,12 @@ export default function DocumentEditor({ doc, profileId, onChange }: Props) {
 
   return (
     <div
-      className="panel"
-      style={{ marginTop: 10, borderColor: doc.approved ? "#22c55e" : undefined }}
+      className={compact ? "document-editor" : "panel"}
+      style={
+        compact
+          ? undefined
+          : { marginTop: 10, borderColor: doc.approved ? "#22c55e" : undefined }
+      }
     >
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <strong>
@@ -117,10 +155,21 @@ export default function DocumentEditor({ doc, profileId, onChange }: Props) {
         {preview ? "Rendered preview" : "Edit the content, then save, approve, or regenerate"}
       </label>
       {preview ? (
-        <div
-          className="doc-preview"
-          dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
-        />
+        loadingPreview ? (
+          <div className="doc-preview"><Spinner label="Applying template..." /></div>
+        ) : previewHtml ? (
+          <iframe
+            className="doc-preview template-preview"
+            sandbox=""
+            srcDoc={previewHtml}
+            title={`${label} template preview`}
+          />
+        ) : (
+          <div
+            className="doc-preview"
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+          />
+        )
       ) : (
         <textarea
           value={content}

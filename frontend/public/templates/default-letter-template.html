@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{FULL_NAME}} - Cover Letter</title>
+  <style>
+    @page {
+      margin: 0.7in;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      color: #1f2933;
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.55;
+      margin: 0 auto;
+      max-width: 8.5in;
+    }
+
+    .letterhead {
+      border-bottom: 2px solid #1d5e73;
+      margin-bottom: 28px;
+      padding-bottom: 14px;
+    }
+
+    h1 {
+      color: #173f4f;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 25pt;
+      font-weight: 600;
+      letter-spacing: 0;
+      line-height: 1.1;
+      margin: 0 0 7px;
+    }
+
+    .contact-info {
+      color: #526b75;
+      font-size: 9.5pt;
+    }
+
+    .contact-info span:not(:last-child)::after {
+      color: #8ba1a8;
+      content: " | ";
+      padding: 0 5px;
+    }
+
+    .date,
+    .recipient,
+    .salutation,
+    .closing {
+      margin: 0 0 18px;
+    }
+
+    .recipient {
+      line-height: 1.4;
+    }
+
+    p {
+      margin: 0 0 15px;
+    }
+
+    .signature {
+      color: #173f4f;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 13pt;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="letterhead">
+    <h1>{{FULL_NAME}}</h1>
+    <div class="contact-info">
+      <span>{{EMAIL}}</span>
+      <span>{{PHONE}}</span>
+      <span>{{LOCATION}}</span>
+      <span>{{LINKEDIN_URL}}</span>
+    </div>
+  </header>
+
+  <main class="generated-document">{{DOCUMENT_CONTENT}}</main>
+</body>
+</html>
