@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleHelp } from "lucide-react";
+import { CircleHelp, CircleUserRound, Moon, Sun } from "lucide-react";
 import { api } from "./api";
 import ApplicationsTab from "./components/ApplicationsTab";
 import AuthPage from "./components/AuthPage";
@@ -161,9 +161,9 @@ export default function App() {
           className="btn secondary theme-toggle"
           onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
           title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          aria-label="Toggle color theme"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
         </button>
         <button
           className="btn secondary help-button"
@@ -181,9 +181,10 @@ export default function App() {
             className="profile-trigger"
             aria-expanded={profileMenuOpen}
             aria-label="Open profile menu"
+            title="Profile menu"
             onClick={() => setProfileMenuOpen((open) => !open)}
           >
-            <span className="profile-initial">{authUser?.email.slice(0, 1).toUpperCase() ?? "P"}</span>
+            <CircleUserRound size={20} aria-hidden="true" />
           </button>
           {profileMenuOpen && (
             <div className="profile-dropdown">

@@ -137,16 +137,20 @@ a:hover {
 .auth-message { background: #e4f0e7; color: #26553a; font-size: .86rem; line-height: 1.4; padding: 10px; }
 
 .profile-menu { margin-left: 4px; position: relative; }
-.help-button {
+.theme-toggle,
+.help-button,
+.profile-trigger {
   align-items: center;
+  background: transparent !important;
+  border: 0 !important;
+  color: var(--text);
   display: inline-flex;
   justify-content: center;
   min-height: 36px;
   min-width: 36px;
   padding: 6px !important;
 }
-.profile-trigger { align-items: center; background: transparent; border: 1px solid var(--border); color: var(--text); cursor: pointer; display: flex; padding: 5px; }
-.profile-initial { align-items: center; background: var(--accent); border-radius: 50%; color: #fff; display: flex; font-size: .75rem; font-weight: 700; height: 24px; justify-content: center; width: 24px; }
+.profile-trigger { cursor: pointer; }
 .profile-dropdown { background: var(--panel); border: 1px solid var(--border); box-shadow: 0 10px 25px rgba(0,0,0,.2); min-width: 190px; padding: 6px; position: absolute; right: 0; top: calc(100% + 7px); z-index: 20; }
 .profile-dropdown p { color: var(--muted); font-size: .75rem; margin: 7px 8px; overflow-wrap: anywhere; }
 .profile-dropdown button { background: transparent; border: 0; color: var(--text); cursor: pointer; display: block; padding: 9px 8px; text-align: left; width: 100%; }
@@ -209,7 +213,6 @@ h1 {
 
 .theme-toggle {
   margin-left: auto;
-  padding: 6px 12px;
   white-space: nowrap;
 }
 
