@@ -97,6 +97,31 @@ async def init_db() -> None:
             text("ALTER TABLE documents ADD COLUMN IF NOT EXISTS rendered_html TEXT")
         )
         await conn.execute(
+            text(
+                "ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS "
+                "manual_source VARCHAR(100)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS "
+                "user_id INTEGER REFERENCES users(id) ON DELETE CASCADE"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_job_postings_user_id "
+                "ON job_postings (user_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE job_postings SET user_id = (SELECT id FROM users ORDER BY id LIMIT 1) "
+                "WHERE source = 'manual' AND user_id IS NULL "
+                "AND (SELECT COUNT(*) FROM users) = 1"
+            )
+        )
+        await conn.execute(
             text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS additional_information TEXT")
         )
         await conn.execute(

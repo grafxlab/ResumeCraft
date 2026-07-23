@@ -88,6 +88,7 @@ export interface ResumeTemplate {
 export interface JobPosting {
   id: number;
   source: string;
+  manual_source: string | null;
   external_id: string;
   url: string;
   title: string;
@@ -104,6 +105,27 @@ export interface JobPosting {
   match_notes: string | null;
   status: JobStatus;
   created_at: string;
+}
+
+export interface ManualJobInput {
+  title: string;
+  source: string | null;
+  company: string | null;
+  location: string | null;
+  url: string | null;
+  description: string;
+  employment_type: string | null;
+}
+
+export interface ManualJobImport {
+  title: string | null;
+  source: string | null;
+  company: string | null;
+  location: string | null;
+  url: string;
+  description: string | null;
+  employment_type: string | null;
+  duplicate_job: JobPosting | null;
 }
 
 export interface Document {

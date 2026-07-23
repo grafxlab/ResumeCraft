@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, Trash2, X } from "lucide-react";
 import { api } from "../api";
+import { inferJobSource } from "../jobSource";
 import { matchStyle } from "../match";
+import { rankJobs, resultsPageForJob } from "../searchResults";
 import type {
   ApplicationStatus,
   Document,
   JobPosting,
+  ManualJobInput,
   Profile,
 } from "../types";
 import DocumentEditor from "./DocumentEditor";
@@ -18,6 +21,23 @@ interface Props {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+const emptyManualJob = (): ManualJobInput => ({
+  title: "",
+  source: null,
+  company: null,
+  location: null,
+  url: null,
+  description: "",
+  employment_type: null,
+});
+
+function normalizedJobSource(url: string, source: string | null): string | null {
+  const inferred = inferJobSource(url);
+  if (inferred) return inferred;
+  if (!source || source.includes("://") || source.includes("/")) return null;
+  return source;
+}
 
 function savedResultsPageSize(): number | "all" {
   const saved = localStorage.getItem("search.resultsPageSize");
@@ -78,6 +98,17 @@ export default function SearchTab({
   const [addingWord, setAddingWord] = useState(false);
   const [viewingDocumentId, setViewingDocumentId] = useState<number | null>(null);
   const [previewOnOpen, setPreviewOnOpen] = useState(false);
+  const [manualJobEditor, setManualJobEditor] = useState<{
+    jobId: number | null;
+    values: ManualJobInput;
+    sourceWasInferred: boolean;
+    fieldsExpanded: boolean;
+    duplicateJob: JobPosting | null;
+  } | null>(null);
+  const [savingManualJob, setSavingManualJob] = useState(false);
+  const [importingManualJob, setImportingManualJob] = useState(false);
+  const [manualJobAction, setManualJobAction] = useState<number | null>(null);
+  const [newlySavedJobId, setNewlySavedJobId] = useState<number | null>(null);
 
   const sourceNames = sources.map((source) =>
     source === "adzuna" ? "Adzuna" : source === "jsearch" ? "JSearch" : source,
@@ -91,6 +122,8 @@ export default function SearchTab({
   const displayedJobs = resultsPageSize === "all"
     ? jobs
     : jobs.slice((resultsPage - 1) * resultsPageSize, resultsPage * resultsPageSize);
+  const newlySavedJobIsDisplayed = newlySavedJobId != null
+    && displayedJobs.some((job) => job.id === newlySavedJobId);
   const resultsPagination = jobs.length > 0 && (
     <div className="search-results-pagination">
       <label>
@@ -134,6 +167,24 @@ export default function SearchTab({
     setResultsPage((current) => Math.min(current, totalResultPages));
   }, [totalResultPages]);
 
+  useEffect(() => {
+    if (newlySavedJobId == null || !newlySavedJobIsDisplayed) return;
+    const jobId = newlySavedJobId;
+    const animationFrame = window.requestAnimationFrame(() => {
+      document.getElementById(`job-${jobId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+    const timeout = window.setTimeout(() => {
+      setNewlySavedJobId((current) => current === jobId ? null : current);
+    }, 3200);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(timeout);
+    };
+  }, [newlySavedJobId, newlySavedJobIsDisplayed]);
+
   // Restore cached results (valid for 24h). Results only refresh on Search.
   useEffect(() => {
     const raw = localStorage.getItem("search.results");
@@ -161,6 +212,20 @@ export default function SearchTab({
       .then((words) => setIgnoredWords(new Set(words.map((item) => item.word))))
       .catch(() => setIgnoredWords(new Set()));
   }, [profile]);
+
+  useEffect(() => {
+    api
+      .listManualJobs(profile?.id)
+      .then((manualJobs) => {
+        setJobs((current) => rankJobs([
+          ...current.filter((job) => job.source !== "manual"),
+          ...manualJobs,
+        ]));
+      })
+      .catch(() => {
+        /* Manual jobs remain available on the next successful load or search. */
+      });
+  }, [profile?.id]);
 
   useEffect(() => {
     api
@@ -293,6 +358,186 @@ export default function SearchTab({
     });
   };
 
+  const updateVisibleJobs = (update: (current: JobPosting[]) => JobPosting[]) => {
+    setJobs((current) => {
+      const next = rankJobs(update(current));
+      if (cachedAt) {
+        localStorage.setItem(
+          "search.results",
+          JSON.stringify({ ts: cachedAt, jobs: next }),
+        );
+      }
+      return next;
+    });
+  };
+
+  const openManualJobEditor = (job?: JobPosting) => {
+    setError(null);
+    const source = job
+      ? normalizedJobSource(job.url, job.manual_source)
+      : null;
+    setManualJobEditor({
+      jobId: job?.id ?? null,
+      values: job ? {
+        title: job.title,
+        source,
+        company: job.company,
+        location: job.location,
+        url: job.url || null,
+        description: job.description ?? "",
+        employment_type: job.employment_type,
+      } : emptyManualJob(),
+      sourceWasInferred: Boolean(
+        job && source && inferJobSource(job.url) === source,
+      ),
+      fieldsExpanded: Boolean(job),
+      duplicateJob: null,
+    });
+  };
+
+  const saveManualJob = async () => {
+    if (!profile || !manualJobEditor) return;
+    const isNewJob = manualJobEditor.jobId == null;
+    setSavingManualJob(true);
+    setError(null);
+    try {
+      const saved = manualJobEditor.jobId == null
+        ? await api.createManualJob(profile.id, manualJobEditor.values)
+        : await api.updateManualJob(
+            manualJobEditor.jobId,
+            profile.id,
+            manualJobEditor.values,
+          );
+      const updatedJobs = rankJobs([
+        ...jobs.filter((job) => job.id !== saved.id),
+        saved,
+      ]);
+      setJobs(updatedJobs);
+      if (cachedAt) {
+        localStorage.setItem(
+          "search.results",
+          JSON.stringify({ ts: cachedAt, jobs: updatedJobs }),
+        );
+      }
+      setResultsPage(resultsPageForJob(updatedJobs, saved.id, resultsPageSize));
+      if (isNewJob) setNewlySavedJobId(saved.id);
+      setManualJobEditor(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingManualJob(false);
+    }
+  };
+
+  const updateManualJobUrl = (url: string) => {
+    setManualJobEditor((current) => {
+      if (!current) return null;
+      const inferredSource = inferJobSource(url);
+      const updateSource = !current.values.source || current.sourceWasInferred;
+      return {
+        ...current,
+        duplicateJob: null,
+        sourceWasInferred: updateSource && inferredSource != null,
+        values: {
+          ...current.values,
+          url: url || null,
+          source: updateSource ? inferredSource : current.values.source,
+        },
+      };
+    });
+  };
+
+  const importManualJobUrl = async (url: string) => {
+    if (!url.trim()) return;
+    setImportingManualJob(true);
+    setError(null);
+    setManualJobEditor((current) => current ? { ...current, duplicateJob: null } : null);
+    try {
+      const imported = await api.importManualJob(url);
+      setManualJobEditor((current) => {
+        if (!current) return null;
+        if (imported.duplicate_job) {
+          return {
+            ...current,
+            duplicateJob: imported.duplicate_job,
+            fieldsExpanded: false,
+            values: { ...current.values, url: imported.duplicate_job.url },
+          };
+        }
+        const inferredSource = normalizedJobSource(imported.url, imported.source);
+        const updateSource = !current.values.source || current.sourceWasInferred;
+        return {
+          ...current,
+          sourceWasInferred: updateSource && inferredSource != null,
+          fieldsExpanded: true,
+          duplicateJob: null,
+          values: {
+            title: imported.title ?? current.values.title,
+            source: updateSource ? inferredSource : current.values.source,
+            company: imported.company ?? current.values.company,
+            location: imported.location ?? current.values.location,
+            url: imported.url,
+            description: imported.description ?? current.values.description,
+            employment_type: imported.employment_type ?? current.values.employment_type,
+          },
+        };
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setManualJobEditor((current) => current ? {
+        ...current,
+        fieldsExpanded: true,
+      } : null);
+    } finally {
+      setImportingManualJob(false);
+    }
+  };
+
+  const viewExistingManualJob = (job: JobPosting) => {
+    const updatedJobs = rankJobs([
+      ...jobs.filter((current) => current.id !== job.id),
+      job,
+    ]);
+    setJobs(updatedJobs);
+    if (cachedAt) {
+      localStorage.setItem(
+        "search.results",
+        JSON.stringify({ ts: cachedAt, jobs: updatedJobs }),
+      );
+    }
+    setResultsPage(resultsPageForJob(updatedJobs, job.id, resultsPageSize));
+    setNewlySavedJobId(job.id);
+    setManualJobEditor(null);
+  };
+
+  const archiveManualJob = async (job: JobPosting) => {
+    if (!window.confirm(`Archive "${job.title}"?`)) return;
+    setManualJobAction(job.id);
+    setError(null);
+    try {
+      await api.updateJobStatus(job.id, "archived");
+      updateVisibleJobs((current) => current.filter((item) => item.id !== job.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setManualJobAction(null);
+    }
+  };
+
+  const deleteManualJob = async (job: JobPosting) => {
+    if (!window.confirm(`Permanently delete "${job.title}"? This cannot be undone.`)) return;
+    setManualJobAction(job.id);
+    setError(null);
+    try {
+      await api.deleteManualJob(job.id);
+      updateVisibleJobs((current) => current.filter((item) => item.id !== job.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setManualJobAction(null);
+    }
+  };
+
   const ignoreSelectedWord = async () => {
     if (!profile || !selectedUnmatchedWord) return;
     setIgnoringWord(true);
@@ -374,6 +619,168 @@ export default function SearchTab({
 
   return (
     <div>
+      {manualJobEditor && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => !savingManualJob && !importingManualJob && setManualJobEditor(null)}
+        >
+          <div
+            className="modal manual-job-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manual-job-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="manual-job-title">
+                {manualJobEditor.jobId == null ? "Add Job" : "Edit Job"}
+              </strong>
+            </div>
+            <div className="manual-job-fields">
+              <div className="manual-job-wide">
+                <label htmlFor="manual-job-url">Posting URL</label>
+                <div className="manual-job-url-row">
+                  <input
+                    id="manual-job-url"
+                    type="url"
+                    autoFocus
+                    placeholder="Paste a LinkedIn, Indeed, Dice, or other job URL"
+                    value={manualJobEditor.values.url ?? ""}
+                    onChange={(event) => updateManualJobUrl(event.target.value)}
+                    onPaste={(event) => {
+                      const pastedUrl = event.clipboardData.getData("text").trim();
+                      if (!pastedUrl) return;
+                      event.preventDefault();
+                      updateManualJobUrl(pastedUrl);
+                      void importManualJobUrl(pastedUrl);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    disabled={importingManualJob || !manualJobEditor.values.url?.trim()}
+                    onClick={() => void importManualJobUrl(manualJobEditor.values.url ?? "")}
+                  >
+                    {importingManualJob ? <Spinner label="Reading..." /> : "Fill with AI"}
+                  </button>
+                </div>
+              </div>
+              {manualJobEditor.duplicateJob && (
+                <div className="manual-job-duplicate manual-job-wide" role="status">
+                  <div>
+                    <strong>It looks like you have already added this job.</strong>
+                    <p className="meta">
+                      {manualJobEditor.duplicateJob.title} at {manualJobEditor.duplicateJob.company ?? "Unknown company"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => viewExistingManualJob(manualJobEditor.duplicateJob!)}
+                  >
+                    View existing job
+                  </button>
+                </div>
+              )}
+              {manualJobEditor.fieldsExpanded && (
+                <>
+                  <div>
+                    <label htmlFor="manual-job-role">Job title</label>
+                    <input
+                      id="manual-job-role"
+                      value={manualJobEditor.values.title}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, title: event.target.value },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-company">Company</label>
+                    <input
+                      id="manual-job-company"
+                      value={manualJobEditor.values.company ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, company: event.target.value || null },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-source">Source</label>
+                    <input
+                      id="manual-job-source"
+                      placeholder="LinkedIn, Indeed, Dice, company website..."
+                      value={manualJobEditor.values.source ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        sourceWasInferred: false,
+                        values: { ...current.values, source: event.target.value || null },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-location">Location</label>
+                    <input
+                      id="manual-job-location"
+                      value={manualJobEditor.values.location ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, location: event.target.value || null },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-type">Employment type</label>
+                    <input
+                      id="manual-job-type"
+                      placeholder="Full-time, contract, part-time..."
+                      value={manualJobEditor.values.employment_type ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, employment_type: event.target.value || null },
+                      }))}
+                    />
+                  </div>
+                  <div className="manual-job-wide">
+                    <label htmlFor="manual-job-description">Job description</label>
+                    <textarea
+                      id="manual-job-description"
+                      value={manualJobEditor.values.description}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, description: event.target.value },
+                      }))}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            {error && <p className="error">{error}</p>}
+            <div className="actions manual-job-dialog-actions">
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={savingManualJob || importingManualJob}
+                onClick={() => setManualJobEditor(null)}
+              >
+                Cancel
+              </button>
+              {manualJobEditor.fieldsExpanded && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={savingManualJob || importingManualJob || !manualJobEditor.values.title.trim() || !manualJobEditor.values.description.trim()}
+                  onClick={() => void saveManualJob()}
+                >
+                  {savingManualJob ? <Spinner label="Saving..." /> : "Save job"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {selectedUnmatchedWord && (
         <div
           className="modal-backdrop"
@@ -508,9 +915,21 @@ export default function SearchTab({
             </label>
           ))}
         </div>
-        <button className="btn" onClick={search} disabled={loading || !query}>
-          {loading ? <Spinner label="Searching…" /> : "Search"}
-        </button>
+        <div className="search-submit-row">
+          <button className="btn" onClick={search} disabled={loading || !query}>
+            {loading ? <Spinner label="Searching…" /> : "Search"}
+          </button>
+          <button
+            type="button"
+            className="btn manual-job-add"
+            disabled={!profile}
+            title={profile ? "Add Job" : "Create a profile before adding a job"}
+            onClick={() => openManualJobEditor()}
+          >
+            <Plus size={17} aria-hidden="true" />
+            Add Job
+          </button>
+        </div>
         {cachedAt && !loading && (
           <span className="meta" style={{ marginLeft: 10 }}>
             Showing cached results from {new Date(cachedAt).toLocaleString()} ·
@@ -548,16 +967,26 @@ export default function SearchTab({
             : keywords.unmatched.split(", ").filter((word) => !ignoredWords.has(word))
           : [];
         return (
-        <div className="job" key={job.id}>
+        <div
+          id={`job-${job.id}`}
+          className={`job${job.source === "manual" ? " manual-job" : ""}${job.id === newlySavedJobId ? " newly-saved-job" : ""}`}
+          key={job.id}
+        >
           <div className="title">{job.title}</div>
           <div className="meta">
-            {job.company ?? "Unknown company"} · {job.location ?? "—"} ·{" "}
-            <a href={job.url} target="_blank" rel="noreferrer">
-              view posting
-            </a>
+            {job.company ?? "Unknown company"} · {job.location ?? "—"}
+            {job.url && (
+              <> ·{" "}<a href={job.url} target="_blank" rel="noreferrer">
+                view posting
+              </a></>
+            )}
           </div>
           <div>
-            <span className="badge">{job.source}</span>
+            <span className="badge">
+              {job.source === "manual"
+                ? normalizedJobSource(job.url, job.manual_source) ?? "Manual"
+                : job.source}
+            </span>
             {job.match_score != null && (
               <span className="badge score" style={matchStyle(job.match_score)}>
                 match {job.match_score}
@@ -665,13 +1094,48 @@ export default function SearchTab({
                 {isTracking ? <Spinner label="Tracking…" /> : "Track application"}
               </button>
             )}
-            <button
-              className="btn secondary"
-              title="Remove from results"
-              onClick={() => dismiss(job.id)}
-            >
-              Dismiss
-            </button>
+            {job.source === "manual" ? (
+              <div className="manual-job-actions">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Edit ${job.title}`}
+                  title="Edit manual job"
+                  disabled={manualJobAction === job.id}
+                  onClick={() => openManualJobEditor(job)}
+                >
+                  <Pencil size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  aria-label={`Archive ${job.title}`}
+                  title="Archive manual job"
+                  disabled={manualJobAction === job.id}
+                  onClick={() => void archiveManualJob(job)}
+                >
+                  <Archive size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className="icon-btn danger"
+                  aria-label={`Delete ${job.title}`}
+                  title="Delete manual job"
+                  disabled={manualJobAction === job.id}
+                  onClick={() => void deleteManualJob(job)}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn secondary"
+                title="Remove from results"
+                onClick={() => dismiss(job.id)}
+              >
+                Dismiss
+              </button>
+            )}
           </div>
         </div>
         );

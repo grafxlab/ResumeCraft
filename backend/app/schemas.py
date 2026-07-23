@@ -106,9 +106,24 @@ class JobSearchRequest(BaseModel):
     sources: list[str] = ["adzuna", "jsearch"]
 
 
+class ManualJobUpsert(BaseModel):
+    title: str
+    source: str | None = None
+    company: str | None = None
+    location: str | None = None
+    url: str | None = None
+    description: str
+    employment_type: str | None = None
+
+
+class ManualJobImportRequest(BaseModel):
+    url: str
+
+
 class JobPostingOut(ORMModel):
     id: int
     source: str
+    manual_source: str | None
     external_id: str
     url: str
     title: str
@@ -125,6 +140,17 @@ class JobPostingOut(ORMModel):
     match_notes: str | None
     status: JobStatus
     created_at: datetime
+
+
+class ManualJobImportOut(BaseModel):
+    title: str | None = None
+    source: str | None = None
+    company: str | None = None
+    location: str | None = None
+    url: str
+    description: str | None = None
+    employment_type: str | None = None
+    duplicate_job: JobPostingOut | None = None
 
 
 class JobStatusUpdate(BaseModel):

@@ -8,6 +8,8 @@ import type {
   Document,
   IgnoredWord,
   JobPosting,
+  ManualJobImport,
+  ManualJobInput,
   Profile,
   ResumeTemplate,
 } from "./types";
@@ -170,6 +172,41 @@ export const api = {
     if (params?.min_score != null) q.set("min_score", String(params.min_score));
     const qs = q.toString();
     return request<JobPosting[]>(`/jobs${qs ? `?${qs}` : ""}`);
+  },
+  listManualJobs: (profileId?: number) =>
+    request<JobPosting[]>(`/jobs/manual${profileId ? `?profile_id=${profileId}` : ""}`),
+  createManualJob: (profileId: number, data: ManualJobInput) =>
+    request<JobPosting>(`/jobs/manual?profile_id=${profileId}`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  importManualJob: (url: string) =>
+    request<ManualJobImport>("/jobs/manual/import", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+  updateManualJob: (jobId: number, profileId: number, data: ManualJobInput) =>
+    request<JobPosting>(`/jobs/${jobId}/manual?profile_id=${profileId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  updateJobStatus: (jobId: number, status: JobPosting["status"]) =>
+    request<JobPosting>(`/jobs/${jobId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  deleteManualJob: async (jobId: number): Promise<void> => {
+    const response = await fetch(`${BASE}/jobs/${jobId}/manual`, {
+      method: "DELETE",
+      headers: {
+        ...(localStorage.getItem("auth.token")
+          ? { Authorization: `Bearer ${localStorage.getItem("auth.token")}` }
+          : {}),
+      },
+    });
+    if (!response.ok && response.status !== 204) {
+      throw new Error(`Unable to delete manual job (${response.status})`);
+    }
   },
   rescoreJob: (jobId: number, profileId: number) =>
     request<JobPosting>(`/jobs/${jobId}/rescore?profile_id=${profileId}`, {

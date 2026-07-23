@@ -177,7 +177,6 @@ a:hover {
   .profile-template-controls { align-items: stretch; flex-direction: column; }
   .profile-template-controls select { max-width: none; }
   .template-preview-btn { align-self: flex-start; }
-  .template-editor-layout { grid-template-columns: minmax(0, 1fr); }
   .admin-layout { grid-template-columns: minmax(0, 1fr); }
   .admin-sidebar { display: grid; gap: 4px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .admin-sidebar-heading { grid-column: 1 / -1; }
@@ -303,6 +302,31 @@ h1 {
 
 .profile-template-controls select {
   max-width: 320px;
+}
+
+.search-submit-row {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.manual-job-add {
+  align-items: center;
+  background: var(--accent-2);
+  color: #fff;
+  display: inline-flex;
+  gap: 7px;
+}
+
+.manual-job-add:hover:not(:disabled) {
+  background: #15803d;
+}
+
+.manual-job-actions {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
 }
 
 .template-preview-btn {
@@ -565,6 +589,35 @@ button.btn.admin-delete-button:hover { background: #991b1b; }
   margin-bottom: 10px;
 }
 
+.job.manual-job {
+  border-color: var(--accent-2);
+  border-width: 2px;
+}
+
+.job.newly-saved-job {
+  animation: manual-job-glow 3s ease-out both;
+  scroll-margin-block: 24px;
+}
+
+@keyframes manual-job-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+  18% {
+    box-shadow: 0 0 0 4px rgba(34, 197, 94, .35), 0 0 30px 10px rgba(34, 197, 94, .3);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .job.newly-saved-job {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, .3);
+  }
+}
+
 .job .title {
   font-weight: 600;
   font-size: 1rem;
@@ -784,6 +837,93 @@ pre {
   width: min(480px, 100%);
 }
 
+.manual-job-modal {
+  width: min(760px, 100%);
+}
+
+.manual-job-fields {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.manual-job-fields input,
+.manual-job-fields textarea {
+  margin-top: 5px;
+}
+
+.manual-job-fields textarea {
+  min-height: 240px;
+}
+
+.manual-job-url-row {
+  align-items: stretch;
+  display: flex;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.manual-job-url-row input {
+  flex: 1;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.manual-job-url-row .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.manual-job-duplicate {
+  align-items: center;
+  background: rgba(34, 197, 94, .1);
+  border: 1px solid rgba(34, 197, 94, .55);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.manual-job-duplicate p {
+  margin-bottom: 0;
+}
+
+.manual-job-wide {
+  grid-column: 1 / -1;
+}
+
+.manual-job-dialog-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 700px) {
+  .search-submit-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .manual-job-add {
+    justify-content: center;
+  }
+
+  .manual-job-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manual-job-wide {
+    grid-column: auto;
+  }
+
+  .manual-job-url-row {
+    flex-direction: column;
+  }
+
+  .manual-job-duplicate {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .template-editor-modal {
   position: relative;
   width: min(1280px, 100%);
@@ -828,6 +968,12 @@ pre {
 .template-code-preview {
   background: #fff;
   display: block;
+}
+
+@media (max-width: 700px) {
+  .template-editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .document-editor-modal .modal-header {

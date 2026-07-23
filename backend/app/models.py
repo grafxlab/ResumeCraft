@@ -157,7 +157,11 @@ class JobPosting(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     source: Mapped[str] = mapped_column(String(50), index=True)
+    manual_source: Mapped[str | None] = mapped_column(String(100))
     external_id: Mapped[str] = mapped_column(String(255), index=True)
     url: Mapped[str] = mapped_column(Text)
     title: Mapped[str] = mapped_column(String(500))
