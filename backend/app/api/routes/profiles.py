@@ -40,7 +40,10 @@ async def _validate_resume_template(
 
 
 @router.post("/parse-resume", response_model=ProfileCreate)
-async def parse_resume(file: UploadFile) -> ProfileCreate:
+async def parse_resume(
+    file: UploadFile,
+    user: User = Depends(current_user),
+) -> ProfileCreate:
     """Extract structured profile data from an uploaded resume (PDF/DOCX/TXT).
 
     Returns the parsed fields for review; it does not persist a profile.
@@ -51,7 +54,7 @@ async def parse_resume(file: UploadFile) -> ProfileCreate:
 
     try:
         text = resume_parser.extract_text(file.filename or "", data)
-        parsed = await resume_parser.parse_resume(text)
+        parsed = await resume_parser.parse_resume(text, user.id)
         parsed["master_resume_text"] = text.strip()
     except resume_parser.ResumeParseError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

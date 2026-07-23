@@ -45,13 +45,14 @@ async def _generate_content(
     doc_type: DocumentType,
     instructions: str | None,
     template_content: str | None = None,
+    user_id: int | None = None,
 ) -> str:
     if doc_type == DocumentType.RESUME:
         return await generator.generate_resume(
-            job, profile, instructions, template_content
+            job, profile, instructions, template_content, user_id
         )
     return await generator.generate_cover_letter(
-        job, profile, instructions, template_content
+        job, profile, instructions, template_content, user_id
     )
 
 
@@ -90,7 +91,7 @@ async def _generate(
 
     try:
         content = await _generate_content(
-            job, profile, doc_type, req.instructions, template_content
+            job, profile, doc_type, req.instructions, template_content, user.id
         )
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

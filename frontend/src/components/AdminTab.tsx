@@ -1,7 +1,7 @@
 import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Database, Pencil, RefreshCw, Save, ScrollText, Search, Server, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AdminTableData, AdminTableSummary } from "../types";
+import type { AdminTableData, AdminTableSummary, AIModelsData, AIUsageData } from "../types";
 
 const PAGE_SIZE = 25;
 const SKIP_DELETE_CONFIRMATION_KEY = "admin.skipDeleteConfirmation";
@@ -33,7 +33,7 @@ function protectedFieldReason(data: AdminTableData, column: string): string | nu
 }
 
 export default function AdminTab() {
-  const [view, setView] = useState<"logs" | "tables">("logs");
+  const [view, setView] = useState<"logs" | "usage" | "models" | "tables">("logs");
   const [systemExpanded, setSystemExpanded] = useState(true);
   const [tablesExpanded, setTablesExpanded] = useState(true);
   const [tables, setTables] = useState<AdminTableSummary[]>([]);
@@ -196,9 +196,17 @@ export default function AdminTab() {
           {systemExpanded ? <ChevronDown size={16} aria-hidden="true" className="admin-sidebar-caret" /> : <ChevronRight size={16} aria-hidden="true" className="admin-sidebar-caret" />}
         </button>
         {systemExpanded && (
-          <button className={`admin-table-link ${view === "logs" ? "active" : ""}`} onClick={() => setView("logs")}>
-            <span>System Logs</span>
-          </button>
+          <>
+            <button className={`admin-table-link ${view === "logs" ? "active" : ""}`} onClick={() => setView("logs")}>
+              <span>System Logs</span>
+            </button>
+            <button className={`admin-table-link ${view === "usage" ? "active" : ""}`} onClick={() => setView("usage")}>
+              <span>AI Usage</span>
+            </button>
+            <button className={`admin-table-link ${view === "models" ? "active" : ""}`} onClick={() => setView("models")}>
+              <span>Models &amp; Pricing</span>
+            </button>
+          </>
         )}
         <button className="admin-sidebar-heading" aria-expanded={tablesExpanded} style={{ marginTop: 14 }} onClick={() => setTablesExpanded((open) => !open)}>
           <Database size={18} aria-hidden="true" /><strong>Database</strong>
@@ -210,7 +218,7 @@ export default function AdminTab() {
           </button>
         ))}
       </aside>
-      {view === "logs" ? <SystemLogsView /> : (
+      {view === "logs" ? <SystemLogsView /> : view === "usage" ? <AIUsageView /> : view === "models" ? <AIModelsView /> : (
       <main className="admin-content">
         {dbInfo && (
           <div className="db-host-banner">
@@ -299,6 +307,161 @@ export default function AdminTab() {
 }
 
 const LOGS_PAGE_SIZE = 25;
+
+function AIModelsView() {
+  const [data, setData] = useState<AIModelsData | null>(null);
+  const [draftProvider, setDraftProvider] = useState<"anthropic" | "openai">("anthropic");
+  const [draftModel, setDraftModel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getAIModels().then((models) => {
+      setData(models);
+      const provider = models.providers.find((item) => item.id === models.active_provider) ?? models.providers[0];
+      setDraftProvider(provider.id);
+      setDraftModel(provider.selected_model);
+    }).catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
+  }, []);
+
+  const applyModel = async () => {
+    if (!data || !draftModel) return;
+    setSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.selectAIModel(draftProvider, draftModel);
+      setData({
+        ...data,
+        active_provider: result.active_provider,
+        providers: data.providers.map((provider) => provider.id === result.active_provider ? { ...provider, selected_model: result.selected_model } : provider),
+      });
+      const provider = data.providers.find((item) => item.id === result.active_provider);
+      setNotice(`${provider?.models.find((model) => model.id === result.selected_model)?.name ?? result.selected_model} on ${provider?.name ?? result.active_provider} is now active.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const provider = data?.providers.find((item) => item.id === draftProvider) ?? null;
+  const unchanged = data?.active_provider === draftProvider && provider?.selected_model === draftModel;
+
+  return (
+    <main className="admin-content">
+      <div className="admin-toolbar">
+        <div><h2>Models &amp; Pricing</h2><p className="meta">Standard API rates · USD per million tokens</p></div>
+        <button className="btn" disabled={!provider?.configured || saving || unchanged} onClick={() => void applyModel()}>{saving ? "Applying…" : "Use selected model"}</button>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {notice && <div className="admin-delete-result success" role="status"><span>{notice}</span><button className="icon-btn" onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={15} /></button></div>}
+      {!data ? !error && <p className="meta">Loading models…</p> : (
+        <>
+          <div className="ai-provider-tabs" role="tablist" aria-label="AI provider">
+            {data.providers.map((item) => <button key={item.id} role="tab" aria-selected={draftProvider === item.id} className={draftProvider === item.id ? "active" : ""} onClick={() => { setDraftProvider(item.id); setDraftModel(item.selected_model); setNotice(null); }}>{item.name}{data.active_provider === item.id && <span>Active</span>}</button>)}
+          </div>
+          {!provider?.configured && <p className="error">{provider?.name} cannot be activated until its API key is configured.</p>}
+          <div className="admin-table-wrap">
+            <table className="admin-table ai-model-table">
+              <thead><tr><th aria-label="Select model" /><th>Model</th><th>Input</th>{draftProvider === "openai" && <th>Cached input</th>}<th>Output</th><th>Model ID</th></tr></thead>
+              <tbody>{provider?.models.map((model) => (
+                <tr key={model.id} className={data.active_provider === draftProvider && model.id === provider.selected_model ? "ai-model-active" : ""} onClick={() => provider.configured && setDraftModel(model.id)}>
+                  <td><input type="radio" name="ai-model" value={model.id} checked={draftModel === model.id} onChange={() => setDraftModel(model.id)} aria-label={`Select ${model.name}`} /></td>
+                  <td><strong>{model.name}</strong>{data.active_provider === draftProvider && model.id === provider.selected_model && <span className="ai-model-current">Current</span>}{model.note && <small>{model.note}</small>}</td>
+                  <td>${model.input_price.toFixed(2)} / MTok</td>
+                  {draftProvider === "openai" && <td>{model.cached_input_price == null ? "—" : `$${model.cached_input_price.toFixed(3)} / MTok`}</td>}
+                  <td>${model.output_price.toFixed(2)} / MTok</td>
+                  <td><code>{model.id}</code></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <p className="meta ai-pricing-source">Pricing source: <a href={provider?.pricing_source} target="_blank" rel="noreferrer">{provider?.name} API pricing</a>. Estimates use standard uncached input and output rates; they exclude service tiers, batch discounts, caching adjustments, data residency, tools, and other feature charges.</p>
+        </>
+      )}
+    </main>
+  );
+}
+
+function formatTokens(value: number | null): string {
+  return (value ?? 0).toLocaleString();
+}
+
+function formatCost(value: number | null): string {
+  return value == null ? "Unavailable" : `$${value.toFixed(4)}`;
+}
+
+function formatDuration(value: number | null): string {
+  if (value == null) return "Unavailable";
+  if (value >= 1000) return `${(value / 1000).toFixed(1)} s`;
+  return `${Math.round(value)} ms`;
+}
+
+function operationName(value: string): string {
+  return value.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+function AIUsageView() {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState<AIUsageData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadUsage = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.getAIUsage(days));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadUsage();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
+
+  return (
+    <main className="admin-content">
+      <div className="admin-toolbar">
+        <div><h2>AI Usage</h2><p className="meta">Provider-reported token consumption</p></div>
+        <div className="ai-usage-controls">
+          <label>Period<select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option><option value={365}>1 year</option></select></label>
+          <button className="icon-btn" onClick={() => void loadUsage()} title="Refresh" aria-label="Refresh AI usage"><RefreshCw size={16} /></button>
+        </div>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {loading && !data ? <p className="meta">Loading AI usage…</p> : data && (
+        <>
+          <div className="ai-usage-metrics">
+            <div><span>Requests</span><strong>{formatTokens(data.totals.requests)}</strong></div>
+            <div><span>Total tokens</span><strong>{formatTokens(data.totals.total_tokens)}</strong><small>{formatTokens(data.totals.input_tokens)} in · {formatTokens(data.totals.output_tokens)} out</small></div>
+            <div><span>Failures</span><strong>{formatTokens(data.totals.failures)}</strong></div>
+            <div><span>Average AI time</span><strong>{formatDuration(data.totals.average_duration_ms)}</strong><small>Provider response latency</small></div>
+            <div><span>Estimated spend</span><strong>{formatCost(data.totals.estimated_cost_usd)}</strong><small>{data.pricing_configured ? "Based on configured rates" : "Set LLM token pricing in the backend"}</small></div>
+          </div>
+          <section className="ai-usage-section">
+            <h3>Usage by user</h3>
+            <div className="admin-table-wrap"><table className="admin-table ai-usage-table"><thead><tr><th>User</th><th>Requests</th><th>Tokens</th><th>Avg time</th><th>Failures</th><th>Estimated spend</th></tr></thead><tbody>{data.users.length === 0 ? <tr><td colSpan={6} className="admin-empty">No attributed AI calls in this period.</td></tr> : data.users.map((item) => <tr key={item.user_id ?? "unknown"}><td>{item.email ?? "Unknown / historical"}</td><td>{formatTokens(item.requests)}</td><td>{formatTokens(item.total_tokens)}</td><td>{formatDuration(item.average_duration_ms)}</td><td>{formatTokens(item.failures)}</td><td>{formatCost(item.estimated_cost_usd)}</td></tr>)}</tbody></table></div>
+          </section>
+          <section className="ai-usage-section">
+            <h3>Usage by operation</h3>
+            <div className="admin-table-wrap"><table className="admin-table ai-usage-table"><thead><tr><th>Operation</th><th>Requests</th><th>Tokens</th><th>Avg time</th><th>Estimated spend</th></tr></thead><tbody>{data.operations.length === 0 ? <tr><td colSpan={5} className="admin-empty">No AI calls in this period.</td></tr> : data.operations.map((item) => <tr key={item.operation}><td>{operationName(item.operation)}</td><td>{formatTokens(item.requests)}</td><td>{formatTokens(item.total_tokens)}</td><td>{formatDuration(item.average_duration_ms)}</td><td>{formatCost(item.estimated_cost_usd)}</td></tr>)}</tbody></table></div>
+          </section>
+          <section className="ai-usage-section">
+            <h3>Recent calls</h3>
+            <div className="admin-table-wrap"><table className="admin-table ai-usage-table"><thead><tr><th>Time</th><th>Operation</th><th>Provider / model</th><th>Tokens</th><th>Duration</th><th>Status</th></tr></thead><tbody>{data.recent.length === 0 ? <tr><td colSpan={6} className="admin-empty">No AI calls recorded yet.</td></tr> : data.recent.map((item) => <tr key={item.id}><td>{formatLogTime(item.created_at)}</td><td>{operationName(item.operation)}</td><td>{item.provider} · {item.model}</td><td>{item.total_tokens == null ? "Unavailable" : formatTokens(item.total_tokens)}</td><td>{formatDuration(item.duration_ms)}</td><td title={item.error ?? undefined}><span className={`ai-call-status ${item.successful ? "success" : "failed"}`}>{item.successful ? "Success" : "Failed"}</span></td></tr>)}</tbody></table></div>
+          </section>
+        </>
+      )}
+    </main>
+  );
+}
 
 interface SystemLogRow {
   id: number;

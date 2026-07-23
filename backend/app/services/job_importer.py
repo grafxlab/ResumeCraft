@@ -202,7 +202,7 @@ def _extract_json(raw: str) -> dict:
     return value
 
 
-async def import_job_from_url(url: str) -> dict:
+async def import_job_from_url(url: str, user_id: int | None = None) -> dict:
     final_url, page = await _fetch_page(url)
     parser = _JobPageParser()
     parser.feed(page)
@@ -227,6 +227,8 @@ async def import_job_from_url(url: str) -> dict:
         "You extract structured job posting data accurately and never invent missing facts.",
         prompt,
         max_tokens=4096,
+        operation="job_url_import",
+        user_id=user_id,
     )
     extracted = _extract_json(raw)
     result = {

@@ -70,6 +70,20 @@ def _professional_headline(profile: Profile) -> str:
     return profile.skills[0] if profile.skills else ""
 
 
+def _render_additional_items(items: list, legacy_text: str) -> str:
+    item_texts = [
+        _value(item, "text").strip()
+        for item in items
+        if isinstance(item, dict) and _value(item, "text").strip()
+    ]
+    if not item_texts:
+        item_texts = [line.strip() for line in legacy_text.splitlines() if line.strip()]
+    return "".join(
+        f'<p class="additional-item">{html.escape(text).replace(chr(10), "<br>")}</p>'
+        for text in item_texts
+    )
+
+
 def select_relevant_skills(profile: Profile, job: JobPosting) -> list[object]:
     """Keep the template skills section concise and ordered by job relevance."""
     job_terms = {
@@ -104,6 +118,9 @@ def render_document_template(
     links = profile.links or {}
     additional_information = profile.additional_information or ""
     additional_items = profile.additional_information_items or []
+    rendered_additional_items = _render_additional_items(
+        additional_items, additional_information
+    )
     additional_link_item = next(
         (
             item
@@ -201,9 +218,9 @@ def render_document_template(
         name = match.group(1)
         if name == "DOCUMENT_CONTENT":
             return rendered_content
-        escaped_value = html.escape(str(values.get(name, "")))
         if name == "ADDITIONAL_INFORMATION":
-            return escaped_value.replace("\n", "<br>")
+            return rendered_additional_items
+        escaped_value = html.escape(str(values.get(name, "")))
         return escaped_value
 
     rendered = _PLACEHOLDER_RE.sub(replace, rendered)

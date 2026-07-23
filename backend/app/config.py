@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-3-5-sonnet-latest"
+    llm_input_cost_per_million: float | None = None
+    llm_output_cost_per_million: float | None = None
 
     # App
     cors_origins: str = "http://localhost:5173"

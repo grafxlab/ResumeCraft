@@ -2,6 +2,8 @@ import type {
   Application,
   AdminTableData,
   AdminTableSummary,
+  AIModelsData,
+  AIUsageData,
   ApplicationStatus,
   AuthSession,
   AuthUser,
@@ -44,6 +46,13 @@ export const api = {
   listAdminTables: () => request<AdminTableSummary[]>("/admin/tables"),
   getDatabaseInfo: () =>
     request<{ host: string; port: number | null; database: string | null }>("/admin/database-info"),
+  getAIUsage: (days: number) => request<AIUsageData>(`/admin/ai-usage?days=${days}`),
+  getAIModels: () => request<AIModelsData>("/admin/ai-models"),
+  selectAIModel: (provider: "anthropic" | "openai", model: string) =>
+    request<{ active_provider: string; selected_model: string }>("/admin/ai-models/selection", {
+      method: "PUT",
+      body: JSON.stringify({ provider, model }),
+    }),
   getAdminTable: (
     name: string,
     params: {
@@ -300,7 +309,14 @@ export const api = {
     const query = profileId != null ? `?profile_id=${profileId}` : "";
     const resp = await fetch(`${BASE}/documents/${id}/pdf${query}`);
     if (!resp.ok) {
-      throw new Error(`PDF generation failed (${resp.status})`);
+      let detail = `PDF generation failed (${resp.status})`;
+      try {
+        const body = await resp.json();
+        detail = body.detail ?? detail;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(detail);
     }
     return resp.blob();
   },

@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -244,4 +245,46 @@ class SystemLog(Base):
     detail: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class AIUsageEvent(Base):
+    __tablename__ = "ai_usage_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    provider: Mapped[str] = mapped_column(String(30), index=True)
+    model: Mapped[str] = mapped_column(String(120), index=True)
+    operation: Mapped[str] = mapped_column(String(80), index=True)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    estimated_cost_usd: Mapped[float | None] = mapped_column(Float)
+    duration_ms: Mapped[float | None] = mapped_column(Float)
+    successful: Mapped[bool] = mapped_column(default=True, index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class AIModelSelection(Base):
+    __tablename__ = "ai_model_selection"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    model: Mapped[str] = mapped_column(String(120))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AIProviderSelection(Base):
+    __tablename__ = "ai_provider_selection"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(String(30))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

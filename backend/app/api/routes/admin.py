@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -12,6 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import Base, get_session
+from app.models import AIModelSelection, AIProviderSelection, AIUsageEvent, User
+from app.services.ai_models import (
+    ANTHROPIC_MODELS,
+    MODEL_SELECTION_IDS,
+    OPENAI_MODELS,
+    OPENAI_PRICING_SOURCE,
+    PRICING_SOURCE,
+    active_model,
+    active_provider,
+    model_details,
+    openai_model_details,
+    pricing_details,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 PAGE_SIZE_MAX = 100
@@ -80,6 +93,178 @@ async def database_info() -> dict[str, Any]:
         "port": url.port,
         "database": url.database,
     }
+
+
+@router.get("/ai-usage")
+async def ai_usage(
+    days: int = Query(default=30, ge=1, le=365),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    since = datetime.now(UTC) - timedelta(days=days)
+    period_filter = AIUsageEvent.created_at >= since
+    totals = (
+        await session.execute(
+            select(
+                func.count(AIUsageEvent.id).label("requests"),
+                func.count(AIUsageEvent.id)
+                .filter(AIUsageEvent.successful.is_(False))
+                .label("failures"),
+                func.coalesce(func.sum(AIUsageEvent.input_tokens), 0).label(
+                    "input_tokens"
+                ),
+                func.coalesce(func.sum(AIUsageEvent.output_tokens), 0).label(
+                    "output_tokens"
+                ),
+                func.coalesce(func.sum(AIUsageEvent.total_tokens), 0).label(
+                    "total_tokens"
+                ),
+                func.sum(AIUsageEvent.estimated_cost_usd).label(
+                    "estimated_cost_usd"
+                ),
+                func.avg(AIUsageEvent.duration_ms).label("average_duration_ms"),
+            ).where(period_filter)
+        )
+    ).mappings().one()
+    operations = (
+        await session.execute(
+            select(
+                AIUsageEvent.operation,
+                func.count(AIUsageEvent.id).label("requests"),
+                func.coalesce(func.sum(AIUsageEvent.total_tokens), 0).label(
+                    "total_tokens"
+                ),
+                func.sum(AIUsageEvent.estimated_cost_usd).label(
+                    "estimated_cost_usd"
+                ),
+                func.avg(AIUsageEvent.duration_ms).label("average_duration_ms"),
+            )
+            .where(period_filter)
+            .group_by(AIUsageEvent.operation)
+            .order_by(func.sum(AIUsageEvent.total_tokens).desc())
+        )
+    ).mappings().all()
+    users = (
+        await session.execute(
+            select(
+                AIUsageEvent.user_id,
+                User.email,
+                func.count(AIUsageEvent.id).label("requests"),
+                func.count(AIUsageEvent.id)
+                .filter(AIUsageEvent.successful.is_(False))
+                .label("failures"),
+                func.coalesce(func.sum(AIUsageEvent.total_tokens), 0).label(
+                    "total_tokens"
+                ),
+                func.sum(AIUsageEvent.estimated_cost_usd).label(
+                    "estimated_cost_usd"
+                ),
+                func.avg(AIUsageEvent.duration_ms).label("average_duration_ms"),
+            )
+            .outerjoin(User, User.id == AIUsageEvent.user_id)
+            .where(period_filter)
+            .group_by(AIUsageEvent.user_id, User.email)
+            .order_by(func.count(AIUsageEvent.id).desc())
+        )
+    ).mappings().all()
+    recent = (
+        await session.execute(
+            select(AIUsageEvent)
+            .where(period_filter)
+            .order_by(AIUsageEvent.created_at.desc())
+            .limit(50)
+        )
+    ).scalars().all()
+    selected_provider = await active_provider()
+    selected_model = await active_model(selected_provider)
+    return {
+        "days": days,
+        "pricing_configured": (
+            pricing_details(selected_provider, selected_model) is not None
+            if selected_provider in MODEL_SELECTION_IDS
+            else settings.llm_input_cost_per_million is not None
+            and settings.llm_output_cost_per_million is not None
+        ),
+        "totals": _row_data(dict(totals)),
+        "users": [_row_data(dict(row)) for row in users],
+        "operations": [_row_data(dict(row)) for row in operations],
+        "recent": [
+            {
+                "id": event.id,
+                "user_id": event.user_id,
+                "provider": event.provider,
+                "model": event.model,
+                "operation": event.operation,
+                "input_tokens": event.input_tokens,
+                "output_tokens": event.output_tokens,
+                "total_tokens": event.total_tokens,
+                "estimated_cost_usd": event.estimated_cost_usd,
+                "duration_ms": event.duration_ms,
+                "successful": event.successful,
+                "error": event.error,
+                "created_at": event.created_at.isoformat(),
+            }
+            for event in recent
+        ],
+    }
+
+
+@router.get("/ai-models")
+async def ai_models() -> dict[str, Any]:
+    selected_provider = await active_provider()
+    return {
+        "active_provider": selected_provider,
+        "providers": [
+            {
+                "id": "anthropic",
+                "name": "Anthropic",
+                "configured": bool(settings.anthropic_api_key),
+                "selected_model": await active_model("anthropic"),
+                "pricing_source": PRICING_SOURCE,
+                "price_unit": "USD per million tokens",
+                "models": [model_details(item["id"]) for item in ANTHROPIC_MODELS],
+            },
+            {
+                "id": "openai",
+                "name": "OpenAI",
+                "configured": bool(settings.openai_api_key),
+                "selected_model": await active_model("openai"),
+                "pricing_source": OPENAI_PRICING_SOURCE,
+                "price_unit": "USD per million tokens",
+                "models": [openai_model_details(item["id"]) for item in OPENAI_MODELS],
+            },
+        ],
+    }
+
+
+@router.put("/ai-models/selection")
+async def select_ai_model(
+    payload: dict[str, str],
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, Any]:
+    provider = payload.get("provider", "").strip().lower()
+    model_id = payload.get("model", "").strip()
+    details = pricing_details(provider, model_id)
+    if details is None:
+        raise HTTPException(status_code=422, detail="Unsupported provider or model")
+    provider_configured = (
+        bool(settings.anthropic_api_key) if provider == "anthropic" else bool(settings.openai_api_key)
+    )
+    if not provider_configured:
+        raise HTTPException(status_code=422, detail=f"{provider.title()} API key is not configured")
+    selection = await session.get(AIModelSelection, MODEL_SELECTION_IDS[provider])
+    if selection is None:
+        selection = AIModelSelection(id=MODEL_SELECTION_IDS[provider], model=model_id)
+        session.add(selection)
+    else:
+        selection.model = model_id
+    provider_selection = await session.get(AIProviderSelection, 1)
+    if provider_selection is None:
+        provider_selection = AIProviderSelection(id=1, provider=provider)
+        session.add(provider_selection)
+    else:
+        provider_selection.provider = provider
+    await session.commit()
+    return {"active_provider": provider, "selected_model": model_id, "model": details}
 
 
 @router.get("/tables")

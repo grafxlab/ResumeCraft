@@ -66,6 +66,7 @@ async def generate_resume(
     profile: Profile,
     instructions: str | None = None,
     template_content: str | None = None,
+    user_id: int | None = None,
 ) -> str:
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
@@ -91,7 +92,11 @@ async def generate_resume(
             "exportable."
         )
     return await llm.complete(
-        RESUME_SYSTEM, _with_instructions(prompt, instructions), max_tokens=2000
+        RESUME_SYSTEM,
+        _with_instructions(prompt, instructions),
+        max_tokens=2000,
+        operation="resume_generation",
+        user_id=user_id,
     )
 
 
@@ -100,6 +105,7 @@ async def generate_cover_letter(
     profile: Profile,
     instructions: str | None = None,
     template_content: str | None = None,
+    user_id: int | None = None,
 ) -> str:
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
@@ -126,4 +132,6 @@ async def generate_cover_letter(
         COVER_LETTER_SYSTEM,
         _with_instructions(prompt, instructions),
         max_tokens=1200,
+        operation="cover_letter_generation",
+        user_id=user_id,
     )

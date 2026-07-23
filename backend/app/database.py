@@ -46,6 +46,25 @@ async def init_db() -> None:
             )
         )
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text(
+                "ALTER TABLE ai_usage_events "
+                "ADD COLUMN IF NOT EXISTS user_id INTEGER "
+                "REFERENCES users(id) ON DELETE SET NULL"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_ai_usage_events_user_id "
+                "ON ai_usage_events (user_id)"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE ai_usage_events "
+                "ADD COLUMN IF NOT EXISTS duration_ms DOUBLE PRECISION"
+            )
+        )
         # Self-heal the split-brain state where a legacy resume_templates table
         # lingers alongside templates: repoint the profile foreign keys to
         # templates and drop resume_templates when it holds no rows.
@@ -76,6 +95,7 @@ async def init_db() -> None:
                 "END IF; END $$;"
             )
         )
+
         # create_all does not add columns to existing development tables.
         await conn.execute(
             text(
@@ -152,3 +172,7 @@ async def init_db() -> None:
                 "document_type VARCHAR(20) NOT NULL DEFAULT 'resume'"
             )
         )
+
+    from app.services.ai_usage import backfill_missing_ai_usage_costs
+
+    await backfill_missing_ai_usage_costs()

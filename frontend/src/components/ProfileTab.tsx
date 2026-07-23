@@ -12,6 +12,9 @@ interface Props {
   onSaved: (p: Profile) => void;
 }
 
+const masterResumeDraftKey = (profileId: number) =>
+  `profile.masterResumeTextDraft.${profileId}`;
+
 export default function ProfileTab({ profile, onSaved }: Props) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -111,6 +114,17 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     }
   };
 
+  const applyImportedResumeData = (data: Partial<Profile>) => {
+    const {
+      additional_information: _additionalInformation,
+      additional_information_items: _additionalInformationItems,
+      links: _links,
+      profile_link_items: _profileLinkItems,
+      ...resumeData
+    } = data;
+    applyData(resumeData);
+  };
+
   useEffect(() => {
     if (!profile) {
       hydratedProfileId.current = null;
@@ -119,6 +133,8 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (profile.id !== hydratedProfileId.current) {
       hydratedProfileId.current = profile.id;
       applyData(profile);
+      const masterResumeDraft = localStorage.getItem(masterResumeDraftKey(profile.id));
+      if (masterResumeDraft != null) setMasterResumeText(masterResumeDraft);
       return;
     }
     setResumeTemplateId(profile.resume_template_id);
@@ -167,9 +183,15 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     setImporting(true);
     try {
       const parsed = await api.parseResume(file);
-      applyData(parsed);
+      applyImportedResumeData(parsed);
+      if (profile && parsed.master_resume_text !== undefined) {
+        localStorage.setItem(
+          masterResumeDraftKey(profile.id),
+          parsed.master_resume_text ?? "",
+        );
+      }
       setNotice(
-        "Resume imported. Review the fields below, then Save to store it.",
+        "Resume imported. Your links and Additional Information were preserved. Review the fields below, then Save to store it.",
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -488,6 +510,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       const saved = profile
         ? await api.updateProfile(profile.id, payload)
         : await api.createProfile(payload);
+      localStorage.removeItem(masterResumeDraftKey(saved.id));
       onSaved(saved);
       setShowUpdatedDialog(true);
     } catch (e) {
@@ -751,7 +774,13 @@ export default function ProfileTab({ profile, onSaved }: Props) {
             <label>Imported source text used by AI</label>
             <textarea
               value={masterResumeText}
-              onChange={(event) => setMasterResumeText(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value;
+                setMasterResumeText(value);
+                if (profile) {
+                  localStorage.setItem(masterResumeDraftKey(profile.id), value);
+                }
+              }}
               style={{ minHeight: 260 }}
             />
           </>

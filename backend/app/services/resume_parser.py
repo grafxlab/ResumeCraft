@@ -96,7 +96,7 @@ def _extract_json(text: str) -> dict:
     raise json.JSONDecodeError("No JSON object found", cleaned, 0)
 
 
-async def parse_resume(text: str) -> dict:
+async def parse_resume(text: str, user_id: int | None = None) -> dict:
     """Use the LLM to convert raw resume text into structured profile data."""
     if not text.strip():
         raise ResumeParseError("No text could be extracted from the file.")
@@ -110,7 +110,13 @@ async def parse_resume(text: str) -> dict:
         "RESUME TEXT:\n"
         f"{text[:MAX_RESUME_TEXT_CHARS]}"
     )
-    raw = await llm.complete(PARSE_SYSTEM, prompt, max_tokens=4096)
+    raw = await llm.complete(
+        PARSE_SYSTEM,
+        prompt,
+        max_tokens=4096,
+        operation="resume_import",
+        user_id=user_id,
+    )
 
     try:
         return _extract_json(raw)

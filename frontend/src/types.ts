@@ -69,6 +69,71 @@ export interface AdminTableData {
   total: number;
 }
 
+export interface AIUsageData {
+  days: number;
+  pricing_configured: boolean;
+  totals: {
+    requests: number;
+    failures: number;
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    estimated_cost_usd: number | null;
+    average_duration_ms: number | null;
+  };
+  users: Array<{
+    user_id: number | null;
+    email: string | null;
+    requests: number;
+    failures: number;
+    total_tokens: number;
+    estimated_cost_usd: number | null;
+    average_duration_ms: number | null;
+  }>;
+  operations: Array<{
+    operation: string;
+    requests: number;
+    total_tokens: number;
+    estimated_cost_usd: number | null;
+    average_duration_ms: number | null;
+  }>;
+  recent: Array<{
+    id: number;
+    user_id: number | null;
+    provider: string;
+    model: string;
+    operation: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    total_tokens: number | null;
+    estimated_cost_usd: number | null;
+    duration_ms: number | null;
+    successful: boolean;
+    error: string | null;
+    created_at: string;
+  }>;
+}
+
+export interface AIModelsData {
+  active_provider: string;
+  providers: Array<{
+    id: "anthropic" | "openai";
+    name: string;
+    configured: boolean;
+    selected_model: string;
+    pricing_source: string;
+    price_unit: string;
+    models: Array<{
+      id: string;
+      name: string;
+      input_price: number;
+      cached_input_price?: number | null;
+      output_price: number;
+      note?: string;
+    }>;
+  }>;
+}
+
 export interface IgnoredWord {
   id: number;
   profile_id: number;

@@ -253,7 +253,7 @@ async def import_manual_job(
     if duplicate is not None:
         return {"url": duplicate.url, "duplicate_job": duplicate}
     try:
-        return await job_importer.import_job_from_url(payload.url)
+        return await job_importer.import_job_from_url(payload.url, user.id)
     except job_importer.JobImportError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LLMError as exc:
