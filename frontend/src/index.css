@@ -176,6 +176,8 @@ a:hover {
   .template-picker-controls select { max-width: none; }
   .profile-template-controls { align-items: stretch; flex-direction: column; }
   .profile-template-controls select { max-width: none; }
+  .template-preview-btn { align-self: flex-start; }
+  .template-editor-layout { grid-template-columns: minmax(0, 1fr); }
   .admin-layout { grid-template-columns: minmax(0, 1fr); }
   .admin-sidebar { display: grid; gap: 4px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
   .admin-sidebar-heading { grid-column: 1 / -1; }
@@ -301,6 +303,13 @@ h1 {
 
 .profile-template-controls select {
   max-width: 320px;
+}
+
+.template-preview-btn {
+  flex: 0 0 34px;
+  height: 34px;
+  padding: 0;
+  width: 34px;
 }
 
 .template-upload {
@@ -773,6 +782,52 @@ pre {
 
 .template-name-modal {
   width: min(480px, 100%);
+}
+
+.template-editor-modal {
+  position: relative;
+  width: min(1280px, 100%);
+}
+
+.template-editor-modal .modal-header {
+  padding-right: 34px;
+}
+
+.template-editor-modal .modal-header p {
+  margin: 4px 0 0;
+}
+
+.template-editor-layout {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.template-editor-pane {
+  min-width: 0;
+}
+
+.template-editor-pane textarea,
+.template-code-preview {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  height: min(62vh, 720px);
+  margin-top: 6px;
+  width: 100%;
+}
+
+.template-editor-pane textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: .78rem;
+  line-height: 1.5;
+  min-height: 420px;
+  resize: vertical;
+  tab-size: 2;
+}
+
+.template-code-preview {
+  background: #fff;
+  display: block;
 }
 
 .document-editor-modal .modal-header {

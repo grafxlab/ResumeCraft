@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Eye, X } from "lucide-react";
 import { api } from "../api";
 import type { IgnoredWord, Profile, ResumeTemplate, TextLinkItem } from "../types";
 import Spinner from "./Spinner";
@@ -46,6 +47,14 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   );
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
   const [deletingTemplate, setDeletingTemplate] = useState<number | null>(null);
+  const [templateEditor, setTemplateEditor] = useState<{
+    id: number | null;
+    name: string;
+    documentType: "resume" | "cover_letter";
+    content: string;
+  } | null>(null);
+  const [loadingTemplateEditor, setLoadingTemplateEditor] = useState(false);
+  const [savingTemplateEditor, setSavingTemplateEditor] = useState(false);
   const [pendingTemplateUpload, setPendingTemplateUpload] = useState<{
     content: string;
     documentType: "resume" | "cover_letter";
@@ -362,6 +371,70 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     }
   };
 
+  const openTemplateEditor = async (documentType: "resume" | "cover_letter") => {
+    const templateId = documentType === "resume" ? resumeTemplateId : coverLetterTemplateId;
+    const templates = documentType === "resume" ? resumeTemplates : coverLetterTemplates;
+    const selected = templates.find((template) => template.id === templateId);
+    setError(null);
+    if (selected) {
+      setTemplateEditor({
+        id: selected.id,
+        name: selected.name,
+        documentType,
+        content: selected.content,
+      });
+      return;
+    }
+
+    setLoadingTemplateEditor(true);
+    try {
+      const fileName = documentType === "resume"
+        ? "default-resume-template.html"
+        : "default-letter-template.html";
+      const response = await fetch(`/templates/${fileName}`);
+      if (!response.ok) throw new Error(`Unable to load default template (${response.status})`);
+      setTemplateEditor({
+        id: null,
+        name: documentType === "resume" ? "Default resume template" : "Default cover letter template",
+        documentType,
+        content: await response.text(),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingTemplateEditor(false);
+    }
+  };
+
+  const saveTemplateEditor = async () => {
+    if (!templateEditor || templateEditor.id == null) return;
+    setSavingTemplateEditor(true);
+    setError(null);
+    try {
+      const updated = await api.replaceResumeTemplate(
+        templateEditor.id,
+        templateEditor.name,
+        templateEditor.content,
+        templateEditor.documentType,
+      );
+      const updateTemplates = (templates: ResumeTemplate[]) =>
+        templates.map((template) => template.id === updated.id ? updated : template);
+      if (updated.document_type === "resume") setResumeTemplates(updateTemplates);
+      else setCoverLetterTemplates(updateTemplates);
+      setTemplateEditor((current) => current ? { ...current, content: updated.content } : null);
+      setNotice(`${updated.name} was updated.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingTemplateEditor(false);
+    }
+  };
+
+  const templatePreviewHtml = templateEditor?.content.replace(
+    /{{\s*[A-Z][A-Z0-9_]*\s*}}/g,
+    "",
+  ) ?? "";
+
   const profileLink = (kind: "linkedin" | "website") =>
     profileLinkItems.find((item) => item.kind === kind) ?? null;
 
@@ -426,6 +499,84 @@ export default function ProfileTab({ profile, onSaved }: Props) {
 
   return (
     <div className="panel">
+      {templateEditor && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => !savingTemplateEditor && setTemplateEditor(null)}
+        >
+          <div
+            className="modal template-editor-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-editor-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <strong id="template-editor-title">{templateEditor.name}</strong>
+                <p className="meta">
+                  {templateEditor.id == null
+                    ? "Built-in template. Edits are preview-only."
+                    : "Edit the HTML and review the data-free preview."}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="modal-close-btn"
+                aria-label="Close template editor"
+                title="Close"
+                disabled={savingTemplateEditor}
+                onClick={() => setTemplateEditor(null)}
+              >
+                <X size={17} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="template-editor-layout">
+              <div className="template-editor-pane">
+                <label htmlFor="template-html-editor">HTML code</label>
+                <textarea
+                  id="template-html-editor"
+                  value={templateEditor.content}
+                  onChange={(event) => setTemplateEditor((current) =>
+                    current ? { ...current, content: event.target.value } : null
+                  )}
+                  spellCheck={false}
+                />
+              </div>
+              <div className="template-editor-pane">
+                <label>Preview without data</label>
+                <iframe
+                  className="template-code-preview"
+                  sandbox=""
+                  srcDoc={templatePreviewHtml}
+                  title={`${templateEditor.name} preview without data`}
+                />
+              </div>
+            </div>
+            <div className="actions">
+              {templateEditor.id != null && (
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={savingTemplateEditor}
+                  onClick={() => void saveTemplateEditor()}
+                >
+                  {savingTemplateEditor ? "Saving..." : "Save template"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={savingTemplateEditor}
+                onClick={() => setTemplateEditor(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pendingTemplateUpload && (
         <div
           className="modal-backdrop"
@@ -640,6 +791,16 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                   <option key={template.id} value={template.id}>{template.name}</option>
                 ))}
               </select>
+              <button
+                type="button"
+                className="icon-btn template-preview-btn"
+                aria-label="Edit and preview resume template"
+                title="Edit and preview resume template"
+                disabled={loadingTemplateEditor}
+                onClick={() => void openTemplateEditor("resume")}
+              >
+                <Eye size={17} aria-hidden="true" />
+              </button>
               <label className="btn secondary template-upload">
                 {uploadingTemplate ? "Uploading..." : "Upload resume template"}
                 <input
@@ -676,6 +837,16 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                   <option key={template.id} value={template.id}>{template.name}</option>
                 ))}
               </select>
+              <button
+                type="button"
+                className="icon-btn template-preview-btn"
+                aria-label="Edit and preview cover letter template"
+                title="Edit and preview cover letter template"
+                disabled={loadingTemplateEditor}
+                onClick={() => void openTemplateEditor("cover_letter")}
+              >
+                <Eye size={17} aria-hidden="true" />
+              </button>
               <label className="btn secondary template-upload">
                 {uploadingTemplate ? "Uploading..." : "Upload cover letter template"}
                 <input
