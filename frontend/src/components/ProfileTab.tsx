@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { IgnoredWord, Profile, ResumeTemplate } from "../types";
+import type { IgnoredWord, Profile, ResumeTemplate, TextLinkItem } from "../types";
 import Spinner from "./Spinner";
+import PlaceholderHelp from "./PlaceholderHelp";
+import TextLinkField from "./TextLinkField";
+import TextLinkList from "./TextLinkList";
 
 interface Props {
   profile: Profile | null;
@@ -14,7 +17,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
   const [summary, setSummary] = useState("");
-  const [additionalInformation, setAdditionalInformation] = useState("");
+  const [additionalInformationItems, setAdditionalInformationItems] = useState<TextLinkItem[]>([]);
   const [skills, setSkills] = useState("");
   const [experience, setExperience] = useState("[]");
   const [education, setEducation] = useState("[]");
@@ -28,7 +31,8 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [ignoredKeywordsExpanded, setIgnoredKeywordsExpanded] = useState(
     () => localStorage.getItem("profile.ignoredKeywordsExpanded") !== "false",
   );
-  const [links, setLinks] = useState<Record<string, string>>({});
+  const [legacyLinks, setLegacyLinks] = useState<Record<string, string>>({});
+  const [profileLinkItems, setProfileLinkItems] = useState<TextLinkItem[]>([]);
   const [resumeTemplates, setResumeTemplates] = useState<ResumeTemplate[]>([]);
   const [coverLetterTemplates, setCoverLetterTemplates] = useState<ResumeTemplate[]>([]);
   const [resumeTemplateId, setResumeTemplateId] = useState<number | null>(null);
@@ -47,15 +51,33 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (data.phone != null) setPhone(data.phone);
     if (data.location != null) setLocation(data.location);
     if (data.summary != null) setSummary(data.summary);
-    if (data.additional_information != null) {
-      setAdditionalInformation(data.additional_information);
+    if (data.additional_information_items?.length) {
+      setAdditionalInformationItems(data.additional_information_items);
+    } else if (data.additional_information) {
+      setAdditionalInformationItems([{ text: data.additional_information, link: "" }]);
+    } else if (data.additional_information_items != null) {
+      setAdditionalInformationItems([]);
     }
     if (data.skills != null) setSkills(data.skills.join(", "));
     if (data.experience != null)
       setExperience(JSON.stringify(data.experience, null, 2));
     if (data.education != null)
       setEducation(JSON.stringify(data.education, null, 2));
-    if (data.links != null) setLinks(data.links);
+    if (data.links != null) setLegacyLinks(data.links);
+    if (data.profile_link_items != null) {
+      setProfileLinkItems(
+        data.profile_link_items.map((item) => ({
+          ...item,
+          kind: item.kind ?? (
+            item.text.trim().toLowerCase() === "linkedin"
+              ? "linkedin"
+              : item.text.trim().toLowerCase() === "website"
+                ? "website"
+                : undefined
+          ),
+        })),
+      );
+    }
     if (data.resume_template_id !== undefined) {
       setResumeTemplateId(data.resume_template_id);
     }
@@ -146,7 +168,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         ),
       );
       const supported = (documentType === "resume"
-        ? ["FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION", "OVERVIEW", "SKILL", "JOB_TITLE", "COMPANY", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT", "DEGREE_OR_CREDENTIAL", "INSTITUTION"]
+        ? ["FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION", "OVERVIEW", "SKILL", "JOB_TITLE", "COMPANY", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT", "DEGREE_OR_CREDENTIAL", "INSTITUTION", "ADDITIONAL_LABEL", "ADDITIONAL_URL", "ADDITIONAL_URL_LABEL"]
         : ["FULL_NAME", "EMAIL", "PHONE", "LOCATION", "DATE", "RECIPIENT_NAME", "COMPANY", "SALUTATION", "CLOSING", "LETTER_BODY", "DOCUMENT_CONTENT"]
       ).filter((placeholder) => placeholders.has(placeholder));
       if (supported.length < 3) {
@@ -202,24 +224,52 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     }
   };
 
+  const profileLink = (kind: "linkedin" | "website") =>
+    profileLinkItems.find((item) => item.kind === kind) ?? null;
+
+  const saveProfileLink = (
+    kind: "linkedin" | "website",
+    item: TextLinkItem | null,
+  ) => {
+    setProfileLinkItems((items) => {
+      const withoutCurrent = items.filter((current) => current.kind !== kind);
+      return item ? [...withoutCurrent, { ...item, kind }] : withoutCurrent;
+    });
+  };
+
   const save = async () => {
     setError(null);
     setSaving(true);
     try {
+      const profileLinks = Object.fromEntries(
+        profileLinkItems
+          .filter((item) => item.link)
+          .map((item, index) => {
+            const normalized = item.text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+            const key = item.kind === "linkedin"
+              ? "linkedin"
+              : item.kind === "website"
+                ? "portfolio"
+                : normalized || `link_${index + 1}`;
+            return [key, item.link];
+          }),
+      );
       const payload = {
         full_name: fullName,
         email: email || null,
         phone: phone || null,
         location: location || null,
         summary: summary || null,
-        additional_information: additionalInformation || null,
+        additional_information: additionalInformationItems.map((item) => item.text).join("\n") || null,
+        additional_information_items: additionalInformationItems,
         skills: skills
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
         experience: JSON.parse(experience || "[]"),
         education: JSON.parse(education || "[]"),
-        links: { ...(profile?.links ?? {}), ...links },
+        links: { ...legacyLinks, ...profileLinks },
+        profile_link_items: profileLinkItems,
         resume_template_id: resumeTemplateId,
         cover_letter_template_id: coverLetterTemplateId,
       };
@@ -298,41 +348,53 @@ export default function ProfileTab({ profile, onSaved }: Props) {
 
       <div className="row">
         <div>
-          <label>Full name</label>
+          <div className="field-label"><label>Full name</label><PlaceholderHelp placeholders={["FULL_NAME"]} /></div>
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} />
         </div>
         <div>
-          <label>Email</label>
+          <div className="field-label"><label>Email</label><PlaceholderHelp placeholders={["EMAIL"]} /></div>
           <input value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
       </div>
       <div className="row">
         <div>
-          <label>Phone</label>
+          <div className="field-label"><label>Phone</label><PlaceholderHelp placeholders={["PHONE"]} /></div>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <TextLinkField
+            label="LinkedIn"
+            value={profileLink("linkedin")}
+            onChange={(item) => saveProfileLink("linkedin", item)}
+            placeholders={["LINKEDIN_LABEL", "LINKEDIN_URL"]}
+          />
         </div>
         <div>
-          <label>Location</label>
+          <div className="field-label"><label>Location</label><PlaceholderHelp placeholders={["LOCATION"]} /></div>
           <input value={location} onChange={(e) => setLocation(e.target.value)} />
+          <TextLinkField
+            label="Website"
+            value={profileLink("website")}
+            onChange={(item) => saveProfileLink("website", item)}
+            placeholders={["PORTFOLIO_LABEL", "PORTFOLIO_URL"]}
+          />
         </div>
       </div>
-      <label>Professional summary</label>
+      <div className="field-label"><label>Professional summary</label><PlaceholderHelp placeholders={["OVERVIEW"]} /></div>
       <textarea value={summary} onChange={(e) => setSummary(e.target.value)} />
-      <label>Skills (comma-separated)</label>
+      <div className="field-label"><label>Skills (comma-separated)</label><PlaceholderHelp placeholders={["SKILL"]} /></div>
       <textarea value={skills} onChange={(e) => setSkills(e.target.value)} />
-      <label>Experience (JSON array)</label>
+      <div className="field-label"><label>Experience (JSON array)</label><PlaceholderHelp placeholders={["JOB_TITLE", "COMPANY", "JOB_LOCATION", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT"]} /></div>
       <textarea
         value={experience}
         onChange={(e) => setExperience(e.target.value)}
         style={{ minHeight: 140 }}
       />
-      <label>Education (JSON array)</label>
+      <div className="field-label"><label>Education (JSON array)</label><PlaceholderHelp placeholders={["DEGREE_OR_CREDENTIAL", "INSTITUTION", "EDUCATION_DATES", "EDUCATION_LOCATION", "EDUCATION_DETAILS"]} /></div>
       <textarea value={education} onChange={(e) => setEducation(e.target.value)} />
-      <label>Additional information</label>
-      <textarea
-        value={additionalInformation}
-        placeholder="Certifications, languages, awards, volunteer work, or other relevant details"
-        onChange={(e) => setAdditionalInformation(e.target.value)}
+      <TextLinkList
+        label="Additional information"
+        value={additionalInformationItems}
+        onChange={setAdditionalInformationItems}
+        placeholders={["ADDITIONAL_LABEL", "ADDITIONAL_URL"]}
       />
       <div
         className="panel profile-template"

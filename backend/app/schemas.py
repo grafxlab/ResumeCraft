@@ -60,6 +60,8 @@ class ProfileBase(BaseModel):
     location: str | None = None
     summary: str | None = None
     additional_information: str | None = None
+    additional_information_items: list[dict[str, str]] = []
+    profile_link_items: list[dict[str, str]] = []
     skills: list = []
     experience: list = []
     education: list = []

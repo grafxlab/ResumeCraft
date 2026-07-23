@@ -87,6 +87,17 @@ def render_document_template(
     template = _enable_font_awesome_icons(template)
     links = profile.links or {}
     additional_information = profile.additional_information or ""
+    additional_items = profile.additional_information_items or []
+    additional_link_item = next(
+        (
+            item
+            for item in additional_items
+            if isinstance(item, dict) and str(item.get("link") or "").strip()
+        ),
+        {},
+    )
+    additional_url = _value(additional_link_item, "link")
+    additional_url_label = _value(additional_link_item, "text")
     values = {
         "FULL_NAME": profile.full_name,
         "PROFESSIONAL_HEADLINE": _professional_headline(profile),
@@ -97,9 +108,11 @@ def render_document_template(
         "LINKEDIN_LABEL": links.get("linkedin", ""),
         "PORTFOLIO_URL": links.get("portfolio", ""),
         "PORTFOLIO_LABEL": links.get("portfolio", ""),
-        "ADDITIONAL_URL": next(iter(links.values()), ""),
-        "ADDITIONAL_URL_LABEL": next(iter(links.keys()), ""),
-        "ADDITIONAL_LABEL": "Additional Information" if additional_information else "",
+        "ADDITIONAL_URL": additional_url,
+        "ADDITIONAL_URL_LABEL": additional_url_label,
+        "ADDITIONAL_LABEL": additional_url_label or (
+            "Additional Information" if additional_information else ""
+        ),
         "ADDITIONAL_INFORMATION": additional_information,
         "DATE": date.today().strftime("%B %-d, %Y"),
         "RECIPIENT_NAME": "Hiring Team",

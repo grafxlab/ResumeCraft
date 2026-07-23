@@ -34,12 +34,20 @@ export interface Profile {
   location: string | null;
   summary: string | null;
   additional_information: string | null;
+  additional_information_items: TextLinkItem[];
+  profile_link_items: TextLinkItem[];
   skills: string[];
   experience: unknown[];
   education: unknown[];
   links: Record<string, string>;
   resume_template_id: number | null;
   cover_letter_template_id: number | null;
+}
+
+export interface TextLinkItem {
+  text: string;
+  link: string;
+  kind?: "linkedin" | "website";
 }
 
 export interface IgnoredWord {

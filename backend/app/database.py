@@ -59,6 +59,18 @@ async def init_db() -> None:
         await conn.execute(
             text(
                 "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
+                "additional_information_items JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
+                "profile_link_items JSONB NOT NULL DEFAULT '[]'::jsonb"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
                 "cover_letter_template_id INTEGER REFERENCES resume_templates(id) "
                 "ON DELETE SET NULL"
             )

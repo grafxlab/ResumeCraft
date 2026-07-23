@@ -16,7 +16,10 @@ export default function LandingPage({ onStart, onLogin }: Props) {
       <header className="landing-nav">
         <div className="brand landing-brand">
           <img src="/ResumeCraftLogo.png" alt="ResumeCraft logo" className="app-logo" />
-          <strong><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></strong>
+          <div className="brand-copy">
+            <strong><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></strong>
+            <p>Find the Job. Craft Your Story.</p>
+          </div>
         </div>
         <div className="landing-nav-actions">
           <button className="text-action" onClick={onLogin}>Log in</button>

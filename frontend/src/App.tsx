@@ -155,7 +155,10 @@ export default function App() {
             alt="ResumeCraft logo"
             className="app-logo"
           />
-          <h1><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></h1>
+          <div className="brand-copy">
+            <h1><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></h1>
+            <p>Find the Job. Craft Your Story.</p>
+          </div>
         </div>
         <button
           className="btn secondary theme-toggle"

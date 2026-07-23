@@ -211,6 +211,10 @@ h1 {
   margin: 0;
 }
 
+.brand-copy { display: flex; flex-direction: column; }
+.brand-copy p { color: var(--muted); font-size: .72rem; margin: 2px 0 0; }
+.landing-brand .brand-copy p { color: #526057; }
+
 .theme-toggle {
   margin-left: auto;
   white-space: nowrap;
@@ -431,6 +435,33 @@ button.btn:disabled {
   flex: 1;
   min-width: 160px;
 }
+
+.field-label { align-items: center; display: flex; gap: 5px; }
+.field-label label { margin: 0; }
+.placeholder-help { align-items: center; background: transparent; border: 0; color: var(--muted); cursor: help; display: inline-flex; margin: 4px 0 4px auto; padding: 3px 0; position: relative; }
+.placeholder-help:hover, .placeholder-help:focus-visible { color: var(--accent); }
+.placeholder-help::after { background: var(--panel-2); border: 1px solid var(--border); color: var(--text); content: attr(data-tooltip); font-size: .72rem; line-height: 1.35; opacity: 0; padding: 6px 8px; pointer-events: none; position: absolute; left: 50%; top: calc(100% + 7px); transform: translateX(-50%); transition: opacity .15s ease; visibility: hidden; white-space: nowrap; width: max-content; z-index: 30; }
+.placeholder-help:hover::after, .placeholder-help:focus-visible::after { opacity: 1; visibility: visible; }
+
+.text-link-list { margin-top: 16px; }
+.text-link-list-header { align-items: center; display: flex; justify-content: space-between; }
+.text-link-list-header label { margin: 0; }
+.text-link-list-items { display: grid; gap: 6px; margin-top: 8px; }
+.text-link-item { align-items: center; background: var(--job-surface); border: 1px solid var(--border); display: flex; gap: 10px; justify-content: space-between; min-height: 38px; padding: 6px 8px; }
+.text-link-item > span, .text-link-item > a { overflow-wrap: anywhere; }
+.text-link-item-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.text-link-form { background: var(--job-surface); border: 1px solid var(--border); margin-top: 8px; padding: 12px; }
+.text-link-form label { display: block; }
+.text-link-form input { margin-top: 4px; }
+.text-link-form .actions { margin-top: 10px; }
+.text-link-form .btn { align-items: center; display: inline-flex; gap: 6px; }
+
+.text-link-field { margin-top: 14px; }
+.text-link-field label { display: block; }
+.text-link-input { position: relative; }
+.text-link-input input { margin-top: 4px; padding-right: 30px; }
+.text-link-input button { align-items: center; background: transparent; border: 0; color: var(--muted); cursor: pointer; display: inline-flex; justify-content: center; padding: 3px; position: absolute; right: 5px; top: 50%; transform: translateY(-25%); }
+.text-link-input button:hover { color: var(--text); }
 
 .job {
   background: var(--job-surface);
