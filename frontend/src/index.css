@@ -156,6 +156,10 @@ a:hover {
 .auth-switch { color: #67756c; font-size: .85rem; margin-top: 24px; text-align: center; }
 .auth-switch .link-btn { color: #0d6b58; font-size: inherit; font-weight: 700; }
 .auth-message { background: #e4f0e7; color: #26553a; font-size: .86rem; line-height: 1.4; padding: 10px; }
+.auth-confirmation { justify-content: center; }
+.auth-confirmation > svg { color: #0d6b58; margin-bottom: 18px; }
+.auth-confirmation > p:not(.eyebrow, .auth-message, .error) { color: #405147; line-height: 1.65; margin: 0 0 12px; }
+.auth-confirmation > .link-btn { align-self: center; margin-top: 14px; }
 
 .profile-menu { margin-left: 4px; position: relative; }
 .theme-toggle,

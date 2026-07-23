@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import smtplib
 from datetime import datetime, timezone
 from email.message import EmailMessage
@@ -20,7 +21,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_session
 from app.models import LoginHistory, User
-from app.schemas import AuthSessionOut, AuthUserOut, LoginRequest, MessageOut, SignUpRequest
+from app.schemas import (
+    AuthSessionOut,
+    AuthUserOut,
+    LoginRequest,
+    MessageOut,
+    ResendConfirmationRequest,
+    SignUpRequest,
+)
+from app.services.system_log import record_system_log
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -128,10 +137,81 @@ def _send_confirmation_email(recipient: str, confirmation_url: str) -> None:
         smtp.send_message(message)
 
 
+def _smtp_failure_detail(exc: OSError | smtplib.SMTPException) -> str:
+    smtp_code = getattr(exc, "smtp_code", None)
+    smtp_error = getattr(exc, "smtp_error", None)
+    if isinstance(exc, smtplib.SMTPRecipientsRefused) and exc.recipients:
+        smtp_code, smtp_error = next(iter(exc.recipients.values()))
+    if isinstance(smtp_error, bytes):
+        provider_response = smtp_error.decode("utf-8", errors="replace")
+    elif smtp_error is not None:
+        provider_response = str(smtp_error)
+    else:
+        provider_response = str(exc)
+    provider_response = " ".join(provider_response.split())
+    provider_response = re.sub(
+        r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",
+        "[redacted email]",
+        provider_response,
+        flags=re.IGNORECASE,
+    )[:1000]
+
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        stage = "authentication"
+    elif isinstance(
+        exc,
+        (smtplib.SMTPDataError, smtplib.SMTPSenderRefused),
+    ):
+        stage = "message delivery"
+    elif isinstance(exc, smtplib.SMTPRecipientsRefused):
+        stage = "recipient acceptance"
+    elif isinstance(exc, (smtplib.SMTPConnectError, OSError)):
+        stage = "connection"
+    else:
+        stage = "SMTP transaction"
+
+    return "\n".join(
+        (
+            "Provider: Brevo",
+            f"Server: {settings.smtp_host}:{settings.smtp_port}",
+            f"Stage: {stage}",
+            f"Exception: {type(exc).__name__}",
+            f"SMTP status: {smtp_code if smtp_code is not None else 'Unavailable'}",
+            f"Provider response: {provider_response or 'Unavailable'}",
+        )
+    )
+
+
 async def _send_confirmation(user: User) -> None:
     token = _serializer().dumps({"user_id": user.id}, salt="confirmation")
     confirmation_url = f"{settings.frontend_url}/?confirm_token={token}"
-    await asyncio.to_thread(_send_confirmation_email, user.email, confirmation_url)
+    try:
+        await asyncio.to_thread(
+            _send_confirmation_email,
+            user.email,
+            confirmation_url,
+        )
+    except (OSError, smtplib.SMTPException) as exc:
+        logger.exception("Unable to send confirmation email to %s", user.email)
+        smtp_code = getattr(exc, "smtp_code", None)
+        await record_system_log(
+            level="error",
+            message=(
+                "Confirmation email delivery failed"
+                f"{f' (SMTP {smtp_code})' if smtp_code is not None else ''}"
+            ),
+            source="/api/auth/confirmation-email",
+            method="SMTP",
+            status_code=503,
+            detail=_smtp_failure_detail(exc),
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "We couldn't send the confirmation email. "
+                "Please try again shortly."
+            ),
+        ) from exc
 
 
 @router.post("/signup", response_model=MessageOut, status_code=201)
@@ -158,6 +238,20 @@ async def sign_up(
 
     await _send_confirmation(user)
     return MessageOut(message="Check your email to confirm your account.")
+
+
+@router.post("/resend-confirmation", response_model=MessageOut)
+async def resend_confirmation(
+    payload: ResendConfirmationRequest,
+    session: AsyncSession = Depends(get_session),
+) -> MessageOut:
+    email = payload.email.strip().lower()
+    user = await session.scalar(select(User).where(User.email == email))
+    if user is not None and not user.is_email_verified:
+        await _send_confirmation(user)
+    return MessageOut(
+        message="If the account is awaiting confirmation, a new link was sent."
+    )
 
 
 @router.get("/confirm", response_model=AuthSessionOut)

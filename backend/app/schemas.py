@@ -17,6 +17,10 @@ class SignUpRequest(BaseModel):
     password: str
 
 
+class ResendConfirmationRequest(BaseModel):
+    email: str
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str

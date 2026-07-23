@@ -91,6 +91,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  resendConfirmation: (email: string) =>
+    request<{ message: string }>("/auth/resend-confirmation", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
   confirmEmail: (token: string) => request<AuthSession>(`/auth/confirm?token=${encodeURIComponent(token)}`),
   login: (email: string, password: string) =>
     request<AuthSession>("/auth/login", {

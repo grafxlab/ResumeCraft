@@ -1,3 +1,4 @@
+import { MailCheck } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
 import type { AuthSession } from "../types";
@@ -23,6 +24,7 @@ export default function AuthPage({
   const [status, setStatus] = useState(message ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [signupComplete, setSignupComplete] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -37,6 +39,7 @@ export default function AuthPage({
       if (mode === "signup") {
         const result = await api.signUp(email, password);
         setStatus(result.message);
+        setSignupComplete(true);
       } else {
         onAuthenticated(await api.login(email, password));
       }
@@ -50,7 +53,22 @@ export default function AuthPage({
   const switchMode = () => {
     setError("");
     setStatus("");
+    setSignupComplete(false);
     onModeChange(mode === "signup" ? "login" : "signup");
+  };
+
+  const resendConfirmation = async () => {
+    setError("");
+    setStatus("");
+    setSubmitting(true);
+    try {
+      const result = await api.resendConfirmation(email);
+      setStatus(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -63,6 +81,20 @@ export default function AuthPage({
           <h1>{mode === "signup" ? "Start with a stronger story." : "Welcome back."}</h1>
           <p>Build a profile once, then make every application more specific.</p>
         </div>
+        {signupComplete ? (
+          <section className="auth-form auth-confirmation" aria-labelledby="confirmation-title">
+            <MailCheck size={34} aria-hidden="true" />
+            <p className="eyebrow">CONFIRM YOUR EMAIL</p>
+            <h2 id="confirmation-title">Check your inbox</h2>
+            <p>We sent a confirmation link to <strong>{email}</strong>. Open it to verify your email address and continue to ResumeCraft.</p>
+            {status && <p className="auth-message" role="status">{status}</p>}
+            {error && <p className="error" role="alert">{error}</p>}
+            <button type="button" className="btn auth-submit" disabled={submitting} onClick={() => void resendConfirmation()}>
+              {submitting ? "Sending..." : "Resend confirmation email"}
+            </button>
+            <button type="button" className="link-btn" onClick={switchMode}>Return to login</button>
+          </section>
+        ) : (
         <form className="auth-form" onSubmit={submit}>
           <p className="eyebrow">{mode === "signup" ? "CREATE ACCOUNT" : "SIGN IN"}</p>
           <h2>{mode === "signup" ? "Join ResumeCraft" : "Continue your search"}</h2>
@@ -96,6 +128,7 @@ export default function AuthPage({
             </button>
           </p>
         </form>
+        )}
       </section>
     </main>
   );
