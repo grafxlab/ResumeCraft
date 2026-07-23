@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     google_client_id: str = ""
     google_client_secret: str = ""
+    default_admin_email: str = ""
+    default_admin_password: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

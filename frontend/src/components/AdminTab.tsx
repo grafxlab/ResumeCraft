@@ -1,7 +1,7 @@
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Database, Pencil, RefreshCw, Save, ScrollText, Search, Server, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, Database, Pencil, RefreshCw, Save, ScrollText, Search, Server, Trash2, Users, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import type { AdminTableData, AdminTableSummary, AIModelsData, AIUsageData } from "../types";
+import type { AdminTableData, AdminTableSummary, AdminUser, AIModelsData, AIUsageData } from "../types";
 
 const PAGE_SIZE = 25;
 const SKIP_DELETE_CONFIRMATION_KEY = "admin.skipDeleteConfirmation";
@@ -32,8 +32,8 @@ function protectedFieldReason(data: AdminTableData, column: string): string | nu
   return null;
 }
 
-export default function AdminTab() {
-  const [view, setView] = useState<"logs" | "usage" | "models" | "tables">("logs");
+export default function AdminTab({ currentUserId }: { currentUserId: number }) {
+  const [view, setView] = useState<"users" | "logs" | "usage" | "models" | "tables">("users");
   const [systemExpanded, setSystemExpanded] = useState(true);
   const [tablesExpanded, setTablesExpanded] = useState(true);
   const [tables, setTables] = useState<AdminTableSummary[]>([]);
@@ -197,6 +197,9 @@ export default function AdminTab() {
         </button>
         {systemExpanded && (
           <>
+            <button className={`admin-table-link ${view === "users" ? "active" : ""}`} onClick={() => setView("users")}>
+              <span><Users size={15} aria-hidden="true" /> Users &amp; Access</span>
+            </button>
             <button className={`admin-table-link ${view === "logs" ? "active" : ""}`} onClick={() => setView("logs")}>
               <span>System Logs</span>
             </button>
@@ -218,7 +221,7 @@ export default function AdminTab() {
           </button>
         ))}
       </aside>
-      {view === "logs" ? <SystemLogsView /> : view === "usage" ? <AIUsageView /> : view === "models" ? <AIModelsView /> : (
+      {view === "users" ? <UsersView currentUserId={currentUserId} /> : view === "logs" ? <SystemLogsView /> : view === "usage" ? <AIUsageView /> : view === "models" ? <AIModelsView /> : (
       <main className="admin-content">
         {dbInfo && (
           <div className="db-host-banner">
@@ -307,6 +310,80 @@ export default function AdminTab() {
 }
 
 const LOGS_PAGE_SIZE = 25;
+
+const USER_ROLES: AdminUser["role"][] = ["user", "admin"];
+const USER_PLANS: AdminUser["plan"][] = ["trial", "essential", "pro", "power"];
+
+function UsersView({ currentUserId }: { currentUserId: number }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [drafts, setDrafts] = useState<Record<number, Pick<AdminUser, "role" | "plan">>>({});
+  const [search, setSearch] = useState("");
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const loadUsers = async () => {
+    setError(null);
+    try {
+      const items = await api.listAdminUsers();
+      setUsers(items);
+      setDrafts(Object.fromEntries(items.map((user) => [user.id, { role: user.role, plan: user.plan }])));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    }
+  };
+
+  useEffect(() => {
+    void loadUsers();
+  }, []);
+
+  const saveUser = async (user: AdminUser) => {
+    const draft = drafts[user.id];
+    if (!draft) return;
+    setSavingId(user.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const updated = await api.updateAdminUser(user.id, draft);
+      setUsers((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setNotice(`${updated.email} access updated.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const filteredUsers = users.filter((user) => user.email.toLowerCase().includes(search.trim().toLowerCase()));
+
+  return (
+    <main className="admin-content">
+      <div className="admin-toolbar">
+        <div><h2>Users &amp; Access</h2><p className="meta">{users.length} registered user{users.length === 1 ? "" : "s"}</p></div>
+        <div className="admin-search"><Search size={16} aria-hidden="true" /><input aria-label="Search users" value={search} placeholder="Search by email" onChange={(event) => setSearch(event.target.value)} /></div>
+      </div>
+      {error && <p className="error" role="alert">{error}</p>}
+      {notice && <div className="admin-delete-result success" role="status"><span>{notice}</span><button className="icon-btn" onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={15} /></button></div>}
+      <div className="admin-table-wrap">
+        <table className="admin-table admin-users-table">
+          <thead><tr><th>User</th><th>Verified</th><th>Role</th><th>Plan</th><th>Joined</th><th aria-label="Actions" /></tr></thead>
+          <tbody>{filteredUsers.length === 0 ? <tr><td colSpan={6} className="admin-empty">No matching users.</td></tr> : filteredUsers.map((user) => {
+            const draft = drafts[user.id] ?? { role: user.role, plan: user.plan };
+            const unchanged = draft.role === user.role && draft.plan === user.plan;
+            return <tr key={user.id}>
+              <td><strong>{user.email}</strong>{user.id === currentUserId && <small className="admin-current-user">You</small>}</td>
+              <td>{user.is_email_verified ? "Verified" : "Pending"}</td>
+              <td><select aria-label={`Role for ${user.email}`} value={draft.role} disabled={user.id === currentUserId} onChange={(event) => setDrafts((current) => ({ ...current, [user.id]: { ...draft, role: event.target.value as AdminUser["role"] } }))}>{USER_ROLES.map((role) => <option key={role} value={role}>{role === "admin" ? "Administrator" : "User"}</option>)}</select></td>
+              <td><select aria-label={`Plan for ${user.email}`} value={draft.plan} onChange={(event) => setDrafts((current) => ({ ...current, [user.id]: { ...draft, plan: event.target.value as AdminUser["plan"] } }))}>{USER_PLANS.map((plan) => <option key={plan} value={plan}>{plan.charAt(0).toUpperCase() + plan.slice(1)}</option>)}</select></td>
+              <td>{new Date(user.created_at).toLocaleDateString()}</td>
+              <td><button className="icon-btn" disabled={unchanged || savingId === user.id} onClick={() => void saveUser(user)} title="Save user access" aria-label={`Save access for ${user.email}`}><Save size={15} /></button></td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+    </main>
+  );
+}
 
 function AIModelsView() {
   const [data, setData] = useState<AIModelsData | null>(null);

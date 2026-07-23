@@ -39,6 +39,8 @@ def _user_out(user: User) -> AuthUserOut:
         id=user.id,
         email=user.email,
         is_email_verified=user.is_email_verified,
+        role=user.role,
+        plan=user.plan,
     )
 
 
@@ -95,6 +97,12 @@ async def current_user(
     user = await session.get(User, payload.get("user_id"))
     if user is None:
         raise HTTPException(status_code=401, detail="Account not found")
+    return user
+
+
+async def current_admin(user: User = Depends(current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Administrator access required")
     return user
 
 

@@ -61,6 +61,8 @@ class User(Base, TimestampMixin):
     google_subject: Mapped[str | None] = mapped_column(
         String(255), unique=True, index=True
     )
+    role: Mapped[str] = mapped_column(String(20), default="user", index=True)
+    plan: Mapped[str] = mapped_column(String(20), default="trial", index=True)
 
     resume_templates: Mapped[list[ResumeTemplate]] = relationship(
         back_populates="user", cascade="all, delete-orphan"

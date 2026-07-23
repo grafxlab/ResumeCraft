@@ -10,9 +10,11 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.routes.auth import current_admin
 from app.config import settings
 from app.database import Base, get_session
 from app.models import AIModelSelection, AIProviderSelection, AIUsageEvent, User
+from app.schemas import AdminUserOut, AdminUserUpdate
 from app.services.ai_models import (
     ANTHROPIC_MODELS,
     MODEL_SELECTION_IDS,
@@ -26,11 +28,20 @@ from app.services.ai_models import (
     pricing_details,
 )
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(current_admin)],
+)
 PAGE_SIZE_MAX = 100
+USER_ROLES = {"user", "admin"}
+USER_PLANS = {"trial", "essential", "pro", "power"}
+DEDICATED_ADMIN_TABLES = {"users"}
 
 
 def _table_or_404(table_name: str):
+    if table_name in DEDICATED_ADMIN_TABLES:
+        raise HTTPException(status_code=404, detail="Table not found")
     table = Base.metadata.tables.get(table_name)
     if table is None:
         raise HTTPException(status_code=404, detail="Table not found")
@@ -93,6 +104,48 @@ async def database_info() -> dict[str, Any]:
         "port": url.port,
         "database": url.database,
     }
+
+
+@router.get("/users", response_model=list[AdminUserOut])
+async def list_users(
+    session: AsyncSession = Depends(get_session),
+) -> list[User]:
+    result = await session.scalars(select(User).order_by(User.created_at.desc()))
+    return list(result.all())
+
+
+@router.patch("/users/{user_id}", response_model=AdminUserOut)
+async def update_user_access(
+    user_id: int,
+    payload: AdminUserUpdate,
+    admin: User = Depends(current_admin),
+    session: AsyncSession = Depends(get_session),
+) -> User:
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if payload.role is not None and payload.role not in USER_ROLES:
+        raise HTTPException(status_code=422, detail="Invalid user role")
+    if payload.plan is not None and payload.plan not in USER_PLANS:
+        raise HTTPException(status_code=422, detail="Invalid user plan")
+    if payload.role == "user" and user.id == admin.id:
+        raise HTTPException(
+            status_code=422,
+            detail="You cannot remove your own administrator role",
+        )
+    if payload.role == "user" and user.role == "admin":
+        admin_count = await session.scalar(
+            select(func.count(User.id)).where(User.role == "admin")
+        )
+        if (admin_count or 0) <= 1:
+            raise HTTPException(status_code=422, detail="At least one administrator is required")
+    if payload.role is not None:
+        user.role = payload.role
+    if payload.plan is not None:
+        user.plan = payload.plan
+    await session.commit()
+    await session.refresh(user)
+    return user
 
 
 @router.get("/ai-usage")
@@ -273,6 +326,8 @@ async def list_tables(
 ) -> list[dict[str, Any]]:
     tables = []
     for table in sorted(Base.metadata.tables.values(), key=lambda item: item.name):
+        if table.name in DEDICATED_ADMIN_TABLES:
+            continue
         row_count = await session.scalar(select(func.count()).select_from(table)) or 0
         tables.append(
             {

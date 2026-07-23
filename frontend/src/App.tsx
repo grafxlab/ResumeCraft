@@ -37,6 +37,10 @@ export default function App() {
     localStorage.setItem("theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (tab === "admin" && authUser?.role !== "admin") setTab("search");
+  }, [authUser, tab]);
+
   const completeAuthentication = (session: AuthSession) => {
     localStorage.setItem("auth.token", session.token);
     setAuthUser(session.user);
@@ -198,6 +202,7 @@ export default function App() {
           {profileMenuOpen && (
             <div className="profile-dropdown">
               <p>{authUser?.email}</p>
+              <p className="profile-plan">{authUser?.plan} plan</p>
               <button onClick={() => { selectTab("profile"); setProfileMenuOpen(false); }}>
                 View Profile
               </button>
@@ -225,12 +230,14 @@ export default function App() {
         >
           Profile
         </button>
-        <button
-          className={`tab ${tab === "admin" && !infoPage ? "active" : ""}`}
-          onClick={() => selectTab("admin")}
-        >
-          Admin
-        </button>
+        {authUser?.role === "admin" && (
+          <button
+            className={`tab ${tab === "admin" && !infoPage ? "active" : ""}`}
+            onClick={() => selectTab("admin")}
+          >
+            Admin
+          </button>
+        )}
       </div>
 
       {infoPage ? (
@@ -258,7 +265,7 @@ export default function App() {
           {tab === "profile" && (
             <ProfileTab profile={profile} onSaved={setProfile} />
           )}
-          {tab === "admin" && <AdminTab />}
+          {tab === "admin" && authUser?.role === "admin" && <AdminTab currentUserId={authUser.id} />}
         </>
       )}
 

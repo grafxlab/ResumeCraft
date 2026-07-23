@@ -26,6 +26,23 @@ class AuthUserOut(BaseModel):
     id: int
     email: str
     is_email_verified: bool
+    role: str
+    plan: str
+
+
+class AdminUserOut(ORMModel):
+    id: int
+    email: str
+    is_email_verified: bool
+    role: str
+    plan: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminUserUpdate(BaseModel):
+    role: str | None = None
+    plan: str | None = None
 
 
 class AuthSessionOut(BaseModel):

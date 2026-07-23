@@ -19,6 +19,13 @@ export interface AuthUser {
   id: number;
   email: string;
   is_email_verified: boolean;
+  role: "user" | "admin";
+  plan: "trial" | "essential" | "pro" | "power";
+}
+
+export interface AdminUser extends AuthUser {
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AuthSession {

@@ -2,6 +2,7 @@ import type {
   Application,
   AdminTableData,
   AdminTableSummary,
+  AdminUser,
   AIModelsData,
   AIUsageData,
   ApplicationStatus,
@@ -43,6 +44,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   // Administration
+  listAdminUsers: () => request<AdminUser[]>("/admin/users"),
+  updateAdminUser: (id: number, data: Pick<AdminUser, "role" | "plan">) =>
+    request<AdminUser>(`/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
   listAdminTables: () => request<AdminTableSummary[]>("/admin/tables"),
   getDatabaseInfo: () =>
     request<{ host: string; port: number | null; database: string | null }>("/admin/database-info"),
