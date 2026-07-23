@@ -10,6 +10,7 @@ PARSE_SYSTEM = (
     "prose, no markdown fences. Never invent information; use null or empty "
     "arrays when something is not present in the resume."
 )
+MAX_RESUME_TEXT_CHARS = 100_000
 
 # The exact shape the frontend profile form expects.
 _SCHEMA = """{
@@ -24,7 +25,8 @@ _SCHEMA = """{
      "end": string | null, "highlights": string[]}
   ],
   "education": [
-    {"degree": string, "institution": string, "year": string | null}
+        {"degree": string, "institution": string, "year": string | null,
+         "location": string | null, "details": string | null}
   ],
   "links": { "label": "url" }
 }"""
@@ -48,7 +50,14 @@ def extract_text(filename: str, data: bytes) -> str:
         from docx import Document as DocxDocument
 
         doc = DocxDocument(io.BytesIO(data))
-        return "\n".join(p.text for p in doc.paragraphs)
+        paragraphs = [paragraph.text for paragraph in doc.paragraphs if paragraph.text]
+        table_rows = [
+            " | ".join(cell.text.strip() for cell in row.cells)
+            for table in doc.tables
+            for row in table.rows
+            if any(cell.text.strip() for cell in row.cells)
+        ]
+        return "\n".join([*paragraphs, *table_rows])
 
     if name.endswith((".txt", ".md", ".json")):
         return data.decode("utf-8", errors="ignore")
@@ -94,10 +103,12 @@ async def parse_resume(text: str) -> dict:
 
     prompt = (
         "Extract the resume below into JSON matching EXACTLY this schema. "
+        "Read the complete document, including Education and other sections "
+        "near the end. Preserve coursework and incomplete degree details. "
         "Respond with the JSON object only — no explanation, no code fences.\n"
         f"{_SCHEMA}\n\n"
         "RESUME TEXT:\n"
-        f"{text[:20000]}"
+        f"{text[:MAX_RESUME_TEXT_CHARS]}"
     )
     raw = await llm.complete(PARSE_SYSTEM, prompt, max_tokens=4096)
 

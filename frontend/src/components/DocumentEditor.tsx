@@ -119,7 +119,7 @@ export default function DocumentEditor({
       if (dirty) {
         onChange(await api.updateDocument(doc.id, { content, profile_id: profileId }));
       }
-      const blob = await api.downloadDocumentPdf(doc.id);
+      const blob = await api.downloadDocumentPdf(doc.id, profileId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

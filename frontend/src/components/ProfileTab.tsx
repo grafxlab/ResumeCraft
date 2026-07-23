@@ -17,6 +17,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
   const [summary, setSummary] = useState("");
+  const [masterResumeText, setMasterResumeText] = useState("");
   const [additionalInformationItems, setAdditionalInformationItems] = useState<TextLinkItem[]>([]);
   const [skills, setSkills] = useState("");
   const [experience, setExperience] = useState("[]");
@@ -40,10 +41,22 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const [templatesExpanded, setTemplatesExpanded] = useState(
     () => localStorage.getItem("profile.templatesExpanded") !== "false",
   );
+  const [masterResumeExpanded, setMasterResumeExpanded] = useState(
+    () => localStorage.getItem("profile.masterResumeExpanded") === "true",
+  );
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const [deletingTemplate, setDeletingTemplate] = useState<number | null>(null);
+  const [pendingTemplateUpload, setPendingTemplateUpload] = useState<{
+    content: string;
+    documentType: "resume" | "cover_letter";
+    originalName: string;
+    name: string;
+    duplicateId: number;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const templateFileRef = useRef<HTMLInputElement>(null);
   const coverLetterTemplateFileRef = useRef<HTMLInputElement>(null);
+  const hydratedProfileId = useRef<number | null>(null);
 
   const applyData = (data: Partial<Profile>) => {
     if (data.full_name != null) setFullName(data.full_name);
@@ -51,6 +64,9 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (data.phone != null) setPhone(data.phone);
     if (data.location != null) setLocation(data.location);
     if (data.summary != null) setSummary(data.summary);
+    if (data.master_resume_text !== undefined) {
+      setMasterResumeText(data.master_resume_text ?? "");
+    }
     if (data.additional_information_items?.length) {
       setAdditionalInformationItems(data.additional_information_items);
     } else if (data.additional_information) {
@@ -87,8 +103,17 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   };
 
   useEffect(() => {
-    if (!profile) return;
-    applyData(profile);
+    if (!profile) {
+      hydratedProfileId.current = null;
+      return;
+    }
+    if (profile.id !== hydratedProfileId.current) {
+      hydratedProfileId.current = profile.id;
+      applyData(profile);
+      return;
+    }
+    setResumeTemplateId(profile.resume_template_id);
+    setCoverLetterTemplateId(profile.cover_letter_template_id);
   }, [profile]);
 
   useEffect(() => {
@@ -168,7 +193,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         ),
       );
       const supported = (documentType === "resume"
-        ? ["FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION", "OVERVIEW", "SKILL", "JOB_TITLE", "COMPANY", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT", "DEGREE_OR_CREDENTIAL", "INSTITUTION", "ADDITIONAL_LABEL", "ADDITIONAL_URL", "ADDITIONAL_URL_LABEL"]
+        ? ["FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION", "OVERVIEW", "SKILL", "JOB_TITLE", "COMPANY", "EMPLOYMENT_DATES", "EMPLOYMENT_ACHIEVEMENT", "DEGREE_OR_CREDENTIAL", "INSTITUTION", "ADDITIONAL_INFORMATION", "ADDITIONAL_LABEL", "ADDITIONAL_URL", "ADDITIONAL_URL_LABEL"]
         : ["FULL_NAME", "EMAIL", "PHONE", "LOCATION", "DATE", "RECIPIENT_NAME", "COMPANY", "SALUTATION", "CLOSING", "LETTER_BODY", "DOCUMENT_CONTENT"]
       ).filter((placeholder) => placeholders.has(placeholder));
       if (supported.length < 3) {
@@ -177,20 +202,20 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         );
       }
       const name = file.name.replace(/\.(html?|md|txt)$/i, "") || "Document template";
-      const template = await api.createResumeTemplate(name, content, documentType);
-      if (documentType === "resume") {
-        setResumeTemplates((current) => [template, ...current]);
-        setResumeTemplateId(template.id);
+      const templates = documentType === "resume" ? resumeTemplates : coverLetterTemplates;
+      const duplicate = templates.find(
+        (template) => template.name.trim().toLowerCase() === name.trim().toLowerCase(),
+      );
+      if (duplicate) {
+        setPendingTemplateUpload({
+          content,
+          documentType,
+          originalName: duplicate.name,
+          name: duplicate.name,
+          duplicateId: duplicate.id,
+        });
       } else {
-        setCoverLetterTemplates((current) => [template, ...current]);
-        setCoverLetterTemplateId(template.id);
-      }
-      if (profile) {
-        const updated = await api.updateProfileTemplate(profile.id, template.id, documentType);
-        onSaved(updated);
-        setNotice(`${template.name} is now your default ${documentType === "resume" ? "resume" : "cover letter"} template.`);
-      } else {
-        setNotice(`Template uploaded. Create your profile to use ${template.name} by default.`);
+        await saveTemplateUpload(name, content, documentType);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -198,6 +223,119 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       setUploadingTemplate(false);
       const fileInput = documentType === "resume" ? templateFileRef : coverLetterTemplateFileRef;
       if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const saveTemplateUpload = async (
+    name: string,
+    content: string,
+    documentType: "resume" | "cover_letter",
+    replaceId?: number,
+  ) => {
+    const template = replaceId == null
+      ? await api.createResumeTemplate(name, content, documentType)
+      : await api.replaceResumeTemplate(replaceId, name, content, documentType);
+    if (documentType === "resume") {
+      setResumeTemplates((current) => [
+        template,
+        ...current.filter((item) => item.id !== template.id),
+      ]);
+      setResumeTemplateId(template.id);
+    } else {
+      setCoverLetterTemplates((current) => [
+        template,
+        ...current.filter((item) => item.id !== template.id),
+      ]);
+      setCoverLetterTemplateId(template.id);
+    }
+    if (profile) {
+      const updated = await api.updateProfileTemplate(profile.id, template.id, documentType);
+      onSaved(updated);
+      setNotice(`${template.name} is now your default ${documentType === "resume" ? "resume" : "cover letter"} template.`);
+    } else {
+      setNotice(`Template uploaded. Create your profile to use ${template.name} by default.`);
+    }
+  };
+
+  const confirmTemplateUpload = async () => {
+    if (!pendingTemplateUpload) return;
+    const name = pendingTemplateUpload.name.trim();
+    if (!name) {
+      setError("Template name is required.");
+      return;
+    }
+    const replacingOriginal =
+      name.toLowerCase() === pendingTemplateUpload.originalName.trim().toLowerCase();
+    setUploadingTemplate(true);
+    setError(null);
+    try {
+      await saveTemplateUpload(
+        name,
+        pendingTemplateUpload.content,
+        pendingTemplateUpload.documentType,
+        replacingOriginal ? pendingTemplateUpload.duplicateId : undefined,
+      );
+      setPendingTemplateUpload(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploadingTemplate(false);
+    }
+  };
+
+  const deleteTemplate = async (
+    templateId: number,
+    documentType: "resume" | "cover_letter",
+  ) => {
+    const list = documentType === "resume" ? resumeTemplates : coverLetterTemplates;
+    const target = list.find((template) => template.id === templateId);
+    if (!target) return;
+    if (!window.confirm(`Delete template "${target.name}"? This cannot be undone.`)) return;
+    const wasSelected =
+      (documentType === "resume" ? resumeTemplateId : coverLetterTemplateId) === templateId;
+    const previousTemplateId = documentType === "resume" ? resumeTemplateId : coverLetterTemplateId;
+    let deleted = false;
+    setDeletingTemplate(templateId);
+    setError(null);
+    if (documentType === "resume") {
+      setResumeTemplates((current) => current.filter((template) => template.id !== templateId));
+      if (wasSelected) setResumeTemplateId(null);
+    } else {
+      setCoverLetterTemplates((current) => current.filter((template) => template.id !== templateId));
+      if (wasSelected) setCoverLetterTemplateId(null);
+    }
+    try {
+      await api.deleteResumeTemplate(templateId);
+      deleted = true;
+      if (wasSelected) {
+        if (profile) {
+          const updated = await api.updateProfileTemplate(profile.id, null, documentType);
+          onSaved(updated);
+        }
+      }
+      const currentTemplates = await api.listResumeTemplates(documentType);
+      if (documentType === "resume") setResumeTemplates(currentTemplates);
+      else setCoverLetterTemplates(currentTemplates);
+      setNotice(`${target.name} was deleted.`);
+    } catch (e) {
+      const currentTemplates = await api.listResumeTemplates(documentType).catch(() => null);
+      const fallbackTemplates = deleted
+        ? list.filter((template) => template.id !== templateId)
+        : list;
+      if (documentType === "resume") {
+        setResumeTemplates(currentTemplates ?? fallbackTemplates);
+        if (!deleted && (currentTemplates == null || currentTemplates.some((template) => template.id === templateId))) {
+          setResumeTemplateId(previousTemplateId);
+        }
+      } else {
+        setCoverLetterTemplates(currentTemplates ?? fallbackTemplates);
+        if (!deleted && (currentTemplates == null || currentTemplates.some((template) => template.id === templateId))) {
+          setCoverLetterTemplateId(previousTemplateId);
+        }
+      }
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingTemplate(null);
     }
   };
 
@@ -260,6 +398,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         phone: phone || null,
         location: location || null,
         summary: summary || null,
+        master_resume_text: masterResumeText || null,
         additional_information: additionalInformationItems.map((item) => item.text).join("\n") || null,
         additional_information_items: additionalInformationItems,
         skills: skills
@@ -287,6 +426,50 @@ export default function ProfileTab({ profile, onSaved }: Props) {
 
   return (
     <div className="panel">
+      {pendingTemplateUpload && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => !uploadingTemplate && setPendingTemplateUpload(null)}
+        >
+          <div
+            className="modal template-name-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="template-name-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="template-name-title">Template name already exists</strong>
+            </div>
+            <p className="meta">
+              Change the name to save a new template, or keep it unchanged to replace the existing template.
+            </p>
+            <label htmlFor="template-upload-name">Template name</label>
+            <input
+              id="template-upload-name"
+              autoFocus
+              maxLength={120}
+              value={pendingTemplateUpload.name}
+              onChange={(event) => setPendingTemplateUpload((current) =>
+                current ? { ...current, name: event.target.value } : current
+              )}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void confirmTemplateUpload();
+              }}
+            />
+            {error && <p className="error">{error}</p>}
+            <div className="actions">
+              <button className="btn" disabled={uploadingTemplate} onClick={() => void confirmTemplateUpload()}>
+                {uploadingTemplate ? "Saving..." : "Save"}
+              </button>
+              <button className="btn secondary" disabled={uploadingTemplate} onClick={() => setPendingTemplateUpload(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showUpdatedDialog && (
         <div
           className="modal-backdrop"
@@ -313,7 +496,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
           </div>
         </div>
       )}
-      <h2>Master profile</h2>
+      <h2>Master Profile</h2>
       <p className="meta">
         This is the single source of truth used to tailor every resume and cover
         letter. Documents are generated only from what you enter here.
@@ -374,7 +557,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
             label="Website"
             value={profileLink("website")}
             onChange={(item) => saveProfileLink("website", item)}
-            placeholders={["PORTFOLIO_LABEL", "PORTFOLIO_URL"]}
+            placeholders={["WEBSITE_LABEL", "WEBSITE_URL"]}
           />
         </div>
       </div>
@@ -394,8 +577,35 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         label="Additional information"
         value={additionalInformationItems}
         onChange={setAdditionalInformationItems}
-        placeholders={["ADDITIONAL_LABEL", "ADDITIONAL_URL"]}
+        placeholders={["ADDITIONAL_INFORMATION"]}
       />
+      <div
+        className="panel"
+        style={{ background: "var(--bg)", marginTop: 16, marginBottom: 0 }}
+      >
+        <button
+          className="section-toggle"
+          aria-expanded={masterResumeExpanded}
+          onClick={() => setMasterResumeExpanded((expanded) => {
+            const next = !expanded;
+            localStorage.setItem("profile.masterResumeExpanded", String(next));
+            return next;
+          })}
+        >
+          <strong>Complete Resume Text</strong>
+          <span aria-hidden="true">{masterResumeExpanded ? "Hide" : "Show"}</span>
+        </button>
+        {masterResumeExpanded && (
+          <>
+            <label>Imported source text used by AI</label>
+            <textarea
+              value={masterResumeText}
+              onChange={(event) => setMasterResumeText(event.target.value)}
+              style={{ minHeight: 260 }}
+            />
+          </>
+        )}
+      </div>
       <div
         className="panel profile-template"
         style={{ background: "var(--bg)", marginTop: 16, marginBottom: 0 }}
@@ -440,6 +650,16 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                   onChange={(event) => void uploadTemplate(event.target.files?.[0], "resume")}
                 />
               </label>
+              {resumeTemplateId != null && (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={deletingTemplate != null}
+                  onClick={() => void deleteTemplate(resumeTemplateId, "resume")}
+                >
+                  {deletingTemplate === resumeTemplateId ? "Deleting..." : "Delete"}
+                </button>
+              )}
             </div>
             <label>Cover letter template</label>
             <div className="profile-template-controls">
@@ -466,6 +686,16 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                   onChange={(event) => void uploadTemplate(event.target.files?.[0], "cover_letter")}
                 />
               </label>
+              {coverLetterTemplateId != null && (
+                <button
+                  type="button"
+                  className="btn secondary"
+                  disabled={deletingTemplate != null}
+                  onClick={() => void deleteTemplate(coverLetterTemplateId, "cover_letter")}
+                >
+                  {deletingTemplate === coverLetterTemplateId ? "Deleting..." : "Delete"}
+                </button>
+              )}
             </div>
           </>
         )}

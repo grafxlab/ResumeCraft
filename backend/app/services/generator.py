@@ -27,6 +27,7 @@ def _profile_payload(profile: Profile) -> str:
             "phone": profile.phone,
             "location": profile.location,
             "summary": profile.summary,
+            "master_resume_text": profile.master_resume_text,
             "skills": profile.skills,
             "experience": profile.experience,
             "education": profile.education,
@@ -69,6 +70,9 @@ async def generate_resume(
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
         f"{_profile_payload(profile)}\n\n"
+        "The master_resume_text contains the complete imported resume and may "
+        "include valuable facts omitted from the structured fields. Use those "
+        "facts when relevant, but do not copy irrelevant content.\n\n"
         "TARGET JOB:\n"
         f"{_job_payload(job)}\n\n"
         "Produce a tailored, ATS-friendly resume in Markdown. Include: header "
@@ -100,6 +104,9 @@ async def generate_cover_letter(
     prompt = (
         "CANDIDATE PROFILE (source of truth — do not add anything not here):\n"
         f"{_profile_payload(profile)}\n\n"
+        "The master_resume_text contains the complete imported resume and may "
+        "include valuable facts omitted from the structured fields. Use those "
+        "facts when relevant, but do not copy irrelevant content.\n\n"
         "TARGET JOB:\n"
         f"{_job_payload(job)}\n\n"
         "Write a tailored cover letter addressed to the hiring team at the "

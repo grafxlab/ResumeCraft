@@ -32,7 +32,9 @@ export default function LandingPage({ onStart, onLogin }: Props) {
         <h1>ResumeCraft</h1>
         <p className="landing-lede">
           A modern workspace for turning your experience into thoughtful,
-          job-specific applications.
+          job-specific applications. ResumeCraft gets smarter as you use it.
+          Refine keywords, remove what doesn't matter, and craft your perfect
+          resume for each job you apply for.
         </p>
         <div className="landing-actions">
           <button className="btn landing-primary" onClick={onStart}>Create your account</button>

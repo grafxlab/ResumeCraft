@@ -60,6 +60,7 @@ class ProfileBase(BaseModel):
     phone: str | None = None
     location: str | None = None
     summary: str | None = None
+    master_resume_text: str | None = None
     additional_information: str | None = None
     additional_information_items: list[dict[str, str]] = []
     profile_link_items: list[dict[str, str]] = []

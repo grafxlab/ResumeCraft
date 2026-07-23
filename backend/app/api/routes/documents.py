@@ -20,7 +20,7 @@ from app.schemas import (
 )
 from app.services import generator
 from app.services.llm import LLMError
-from app.services.pdf import markdown_to_pdf
+from app.services.pdf import html_to_pdf, markdown_to_pdf
 from app.services.template_renderer import render_document_template
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -194,15 +194,50 @@ async def preview_document(
 
 @router.get("/{document_id}/pdf")
 async def download_pdf(
-    document_id: int, session: AsyncSession = Depends(get_session)
+    document_id: int,
+    profile_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
 ) -> Response:
-    """Render the document's Markdown to a PDF and return it as a download."""
+    """Render the document to a PDF using the selected template and return it.
+
+    When ``profile_id`` is supplied the document is rendered against the
+    profile's currently selected template so the PDF matches the on-screen
+    preview. Otherwise it falls back to the document's stored rendered HTML,
+    and finally to the raw Markdown styling.
+    """
     doc = await session.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
 
+    html: str | None = None
+    if profile_id is not None:
+        profile = await session.get(Profile, profile_id)
+        job = await session.get(JobPosting, doc.job_id)
+        if profile is None or job is None:
+            raise HTTPException(status_code=404, detail="Profile or job not found")
+        template_id = (
+            profile.resume_template_id
+            if doc.type == DocumentType.RESUME
+            else profile.cover_letter_template_id
+        )
+        if template_id is not None:
+            template = await session.scalar(
+                select(ResumeTemplate).where(
+                    ResumeTemplate.id == template_id,
+                    ResumeTemplate.document_type == doc.type.value,
+                )
+            )
+            if template is None:
+                raise HTTPException(status_code=404, detail="Resume template not found")
+            template_content = template.content
+        else:
+            template_content = _default_template_content(doc.type)
+        html = render_document_template(template_content, doc.content, profile, job)
+    elif doc.rendered_html:
+        html = doc.rendered_html
+
     try:
-        pdf_bytes = markdown_to_pdf(doc.content)
+        pdf_bytes = html_to_pdf(html) if html else markdown_to_pdf(doc.content)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

@@ -52,6 +52,7 @@ async def parse_resume(file: UploadFile) -> ProfileCreate:
     try:
         text = resume_parser.extract_text(file.filename or "", data)
         parsed = await resume_parser.parse_resume(text)
+        parsed["master_resume_text"] = text.strip()
     except resume_parser.ResumeParseError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LLMError as exc:

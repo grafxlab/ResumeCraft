@@ -50,3 +50,12 @@ def markdown_to_pdf(content: str) -> bytes:
     if result.err:
         raise RuntimeError("Failed to render PDF from document content.")
     return buffer.getvalue()
+
+
+def html_to_pdf(html: str) -> bytes:
+    """Render a full HTML document (e.g. a rendered template) into PDF bytes."""
+    buffer = io.BytesIO()
+    result = pisa.CreatePDF(src=html, dest=buffer, encoding="utf-8")
+    if result.err:
+        raise RuntimeError("Failed to render PDF from document template.")
+    return buffer.getvalue()

@@ -18,6 +18,10 @@ _FONT_AWESOME_KIT_RE = re.compile(
 _FONT_AWESOME_CDN_STYLESHEET = (
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
 )
+_SINGLE_COLUMN_ADDITIONAL_INFO_STYLE = (
+    "<style>.additional-info { column-count: 1 !important; "
+    "columns: auto !important; }</style>"
+)
 _MAX_TEMPLATE_SKILLS = 10
 
 
@@ -44,6 +48,17 @@ def _enable_font_awesome_icons(template: str) -> str:
     return _FONT_AWESOME_KIT_RE.sub(
         f'<link rel="stylesheet" href="{_FONT_AWESOME_CDN_STYLESHEET}">',
         template,
+    )
+
+
+def _force_single_column_additional_info(template: str) -> str:
+    head_end = re.search(r"</head\s*>", template, flags=re.IGNORECASE)
+    if head_end is None:
+        return _SINGLE_COLUMN_ADDITIONAL_INFO_STYLE + template
+    return (
+        template[:head_end.start()]
+        + _SINGLE_COLUMN_ADDITIONAL_INFO_STYLE
+        + template[head_end.start():]
     )
 
 
@@ -85,6 +100,7 @@ def render_document_template(
     from the document's Markdown and displayed in a sandboxed iframe by the UI.
     """
     template = _enable_font_awesome_icons(template)
+    template = _force_single_column_additional_info(template)
     links = profile.links or {}
     additional_information = profile.additional_information or ""
     additional_items = profile.additional_information_items or []
@@ -106,8 +122,8 @@ def render_document_template(
         "LOCATION": profile.location or "",
         "LINKEDIN_URL": links.get("linkedin", ""),
         "LINKEDIN_LABEL": links.get("linkedin", ""),
-        "PORTFOLIO_URL": links.get("portfolio", ""),
-        "PORTFOLIO_LABEL": links.get("portfolio", ""),
+        "WEBSITE_URL": links.get("portfolio", ""),
+        "WEBSITE_LABEL": links.get("portfolio", ""),
         "ADDITIONAL_URL": additional_url,
         "ADDITIONAL_URL_LABEL": additional_url_label,
         "ADDITIONAL_LABEL": additional_url_label or (
@@ -185,7 +201,10 @@ def render_document_template(
         name = match.group(1)
         if name == "DOCUMENT_CONTENT":
             return rendered_content
-        return html.escape(str(values.get(name, "")))
+        escaped_value = html.escape(str(values.get(name, "")))
+        if name == "ADDITIONAL_INFORMATION":
+            return escaped_value.replace("\n", "<br>")
+        return escaped_value
 
     rendered = _PLACEHOLDER_RE.sub(replace, rendered)
     if "DOCUMENT_CONTENT" not in template:

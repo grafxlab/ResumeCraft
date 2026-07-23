@@ -91,6 +91,32 @@ export default function SearchTab({
   const displayedJobs = resultsPageSize === "all"
     ? jobs
     : jobs.slice((resultsPage - 1) * resultsPageSize, resultsPage * resultsPageSize);
+  const resultsPagination = jobs.length > 0 && (
+    <div className="search-results-pagination">
+      <label>
+        Display
+        <select
+          value={resultsPageSize}
+          onChange={(event) => {
+            setResultsPageSize(event.target.value === "all" ? "all" : Number(event.target.value));
+            setResultsPage(1);
+          }}
+        >
+          <option value={5}>5</option>
+          <option value={10}>10</option>
+          <option value={25}>25</option>
+          <option value={50}>50</option>
+          <option value="all">All</option>
+        </select>
+        jobs
+      </label>
+      <div className="search-results-pages">
+        <span className="meta">Page {resultsPage} of {totalResultPages}</span>
+        <button className="icon-btn" disabled={resultsPage <= 1} onClick={() => setResultsPage((page) => page - 1)} aria-label="Previous results page" title="Previous page"><ChevronLeft size={16} aria-hidden="true" /></button>
+        <button className="icon-btn" disabled={resultsPage >= totalResultPages} onClick={() => setResultsPage((page) => page + 1)} aria-label="Next results page" title="Next page"><ChevronRight size={16} aria-hidden="true" /></button>
+      </div>
+    </div>
+  );
 
   useEffect(() => {
     localStorage.setItem("search.query", query);
@@ -406,7 +432,7 @@ export default function SearchTab({
             aria-live="polite"
           >
             <div className="modal-header">
-              <strong id="searching-boards-title">Searching job boards</strong>
+              <strong id="searching-boards-title">Searching Jobs</strong>
               <Spinner size="lg" />
             </div>
             <p className="meta">
@@ -416,7 +442,10 @@ export default function SearchTab({
         </div>
       )}
       <div className="panel">
-        <h2>Search Job Boards</h2>
+        <h2>Search Jobs</h2>
+        <p className="meta">
+          We search multiple locations to find you the perfect career match for you.
+        </p>
         <div className="row">
           <div style={{ flex: 2 }}>
             <label>Role / keywords</label>
@@ -497,32 +526,7 @@ export default function SearchTab({
         </div>
       )}
 
-      {jobs.length > 0 && (
-        <div className="search-results-pagination">
-          <label>
-            Display
-            <select
-              value={resultsPageSize}
-              onChange={(event) => {
-                setResultsPageSize(event.target.value === "all" ? "all" : Number(event.target.value));
-                setResultsPage(1);
-              }}
-            >
-              <option value={5}>5</option>
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value="all">All</option>
-            </select>
-            jobs
-          </label>
-          <div className="search-results-pages">
-            <span className="meta">Page {resultsPage} of {totalResultPages}</span>
-            <button className="icon-btn" disabled={resultsPage <= 1} onClick={() => setResultsPage((page) => page - 1)} aria-label="Previous results page" title="Previous page"><ChevronLeft size={16} aria-hidden="true" /></button>
-            <button className="icon-btn" disabled={resultsPage >= totalResultPages} onClick={() => setResultsPage((page) => page + 1)} aria-label="Next results page" title="Next page"><ChevronRight size={16} aria-hidden="true" /></button>
-          </div>
-        </div>
-      )}
+      {resultsPagination}
 
       {displayedJobs.map((job) => {
         const jobDocuments = docs[job.id] ?? [];
@@ -672,6 +676,7 @@ export default function SearchTab({
         </div>
         );
       })}
+      {resultsPagination}
       {viewingDocumentId != null && (
         <div
           className="modal-backdrop"

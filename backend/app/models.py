@@ -87,7 +87,7 @@ class LoginHistory(Base):
 
 
 class ResumeTemplate(Base, TimestampMixin):
-    __tablename__ = "resume_templates"
+    __tablename__ = "templates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -111,6 +111,7 @@ class Profile(Base, TimestampMixin):
     phone: Mapped[str | None] = mapped_column(String(50))
     location: Mapped[str | None] = mapped_column(String(200))
     summary: Mapped[str | None] = mapped_column(Text)
+    master_resume_text: Mapped[str | None] = mapped_column(Text)
     additional_information: Mapped[str | None] = mapped_column(Text)
     additional_information_items: Mapped[list] = mapped_column(JSONB, default=list)
     profile_link_items: Mapped[list] = mapped_column(JSONB, default=list)
@@ -120,10 +121,10 @@ class Profile(Base, TimestampMixin):
     education: Mapped[list] = mapped_column(JSONB, default=list)
     links: Mapped[dict] = mapped_column(JSONB, default=dict)
     resume_template_id: Mapped[int | None] = mapped_column(
-        ForeignKey("resume_templates.id", ondelete="SET NULL"), index=True
+        ForeignKey("templates.id", ondelete="SET NULL"), index=True
     )
     cover_letter_template_id: Mapped[int | None] = mapped_column(
-        ForeignKey("resume_templates.id", ondelete="SET NULL"), index=True
+        ForeignKey("templates.id", ondelete="SET NULL"), index=True
     )
 
     resume_template: Mapped[ResumeTemplate | None] = relationship(
@@ -223,3 +224,20 @@ class Application(Base, TimestampMixin):
     archived: Mapped[bool] = mapped_column(default=False, index=True)
 
     job: Mapped[JobPosting] = relationship(back_populates="application")
+
+
+class SystemLog(Base):
+    """System-level log entries (e.g. unhandled errors) visible to admins."""
+
+    __tablename__ = "system_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[str] = mapped_column(String(20), default="error", index=True)
+    message: Mapped[str] = mapped_column(String(500))
+    source: Mapped[str | None] = mapped_column(String(300), index=True)
+    method: Mapped[str | None] = mapped_column(String(10))
+    status_code: Mapped[int | None] = mapped_column(index=True)
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )

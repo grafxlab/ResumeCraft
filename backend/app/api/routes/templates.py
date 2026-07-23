@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes.auth import current_user
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/resume-templates", tags=["resume templates"])
 MAX_TEMPLATE_LENGTH = 250_000
 SUPPORTED_PLACEHOLDERS = {
     "FULL_NAME", "PROFESSIONAL_HEADLINE", "EMAIL", "PHONE", "LOCATION",
-    "LINKEDIN_URL", "PORTFOLIO_URL", "OVERVIEW", "SKILL", "JOB_TITLE",
+    "LINKEDIN_URL", "WEBSITE_URL", "OVERVIEW", "SKILL", "JOB_TITLE",
     "EMPLOYMENT_DATES", "COMPANY", "JOB_LOCATION", "EMPLOYMENT_ACHIEVEMENT",
     "DEGREE_OR_CREDENTIAL", "EDUCATION_DATES", "INSTITUTION",
     "EDUCATION_LOCATION", "EDUCATION_DETAILS", "ADDITIONAL_LABEL",
@@ -25,6 +25,23 @@ SUPPORTED_COVER_LETTER_PLACEHOLDERS = {
     "LETTER_BODY", "DOCUMENT_CONTENT",
 }
 MIN_PLACEHOLDER_COUNT = 3
+
+
+async def _template_with_name(
+    session: AsyncSession,
+    user_id: int,
+    document_type: str,
+    name: str,
+    exclude_id: int | None = None,
+) -> ResumeTemplate | None:
+    stmt = select(ResumeTemplate).where(
+        ResumeTemplate.user_id == user_id,
+        ResumeTemplate.document_type == document_type,
+        func.lower(ResumeTemplate.name) == name.lower(),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(ResumeTemplate.id != exclude_id)
+    return await session.scalar(stmt)
 
 
 def _validate_template(payload: ResumeTemplateCreate) -> tuple[str, str]:
@@ -79,6 +96,11 @@ async def create_resume_template(
     session: AsyncSession = Depends(get_session),
 ) -> ResumeTemplate:
     name, content = _validate_template(payload)
+    if await _template_with_name(session, user.id, payload.document_type, name):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A template with this name already exists",
+        )
     template = ResumeTemplate(
         user_id=user.id,
         name=name,
@@ -86,6 +108,37 @@ async def create_resume_template(
         content=content,
     )
     session.add(template)
+    await session.commit()
+    await session.refresh(template)
+    return template
+
+
+@router.put("/{template_id}", response_model=ResumeTemplateOut)
+async def replace_resume_template(
+    template_id: int,
+    payload: ResumeTemplateCreate,
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> ResumeTemplate:
+    name, content = _validate_template(payload)
+    template = await session.scalar(
+        select(ResumeTemplate).where(
+            ResumeTemplate.id == template_id,
+            ResumeTemplate.user_id == user.id,
+        )
+    )
+    if template is None:
+        raise HTTPException(status_code=404, detail="Resume template not found")
+    if await _template_with_name(
+        session, user.id, payload.document_type, name, exclude_id=template_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A template with this name already exists",
+        )
+    template.name = name
+    template.document_type = payload.document_type
+    template.content = content
     await session.commit()
     await session.refresh(template)
     return template

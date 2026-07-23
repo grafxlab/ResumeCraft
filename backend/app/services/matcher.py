@@ -35,6 +35,7 @@ def _tokenize(text: str | None) -> set[str]:
 def _profile_terms(profile: Profile) -> set[str]:
     terms: set[str] = set()
     terms |= _tokenize(profile.summary)
+    terms |= _tokenize(profile.master_resume_text)
     for skill in _flatten(profile.skills):
         terms |= _tokenize(skill)
     for exp in profile.experience or []:

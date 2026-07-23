@@ -34,6 +34,7 @@ export interface Profile {
   phone: string | null;
   location: string | null;
   summary: string | null;
+  master_resume_text: string | null;
   additional_information: string | null;
   additional_information_items: TextLinkItem[];
   profile_link_items: TextLinkItem[];
@@ -54,12 +55,14 @@ export interface TextLinkItem {
 export interface AdminTableSummary {
   name: string;
   columns: string[];
+  row_count: number;
 }
 
 export interface AdminTableData {
   table: string;
   columns: string[];
   primary_key: string[];
+  foreign_keys: string[];
   rows: Record<string, unknown>[];
   page: number;
   page_size: number;

@@ -40,6 +40,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   // Administration
   listAdminTables: () => request<AdminTableSummary[]>("/admin/tables"),
+  getDatabaseInfo: () =>
+    request<{ host: string; port: number | null; database: string | null }>("/admin/database-info"),
   getAdminTable: (
     name: string,
     params: {
@@ -188,6 +190,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name, content, document_type }),
     }),
+  replaceResumeTemplate: (
+    id: number,
+    name: string,
+    content: string,
+    document_type: "resume" | "cover_letter",
+  ) =>
+    request<ResumeTemplate>(`/resume-templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ name, content, document_type }),
+    }),
   deleteResumeTemplate: async (id: number): Promise<void> => {
     const resp = await fetch(`${BASE}/resume-templates/${id}`, {
       method: "DELETE",
@@ -247,8 +259,9 @@ export const api = {
   listDocuments: (jobId?: number) =>
     request<Document[]>(`/documents${jobId ? `?job_id=${jobId}` : ""}`),
   getDocument: (id: number) => request<Document>(`/documents/${id}`),
-  downloadDocumentPdf: async (id: number): Promise<Blob> => {
-    const resp = await fetch(`${BASE}/documents/${id}/pdf`);
+  downloadDocumentPdf: async (id: number, profileId?: number): Promise<Blob> => {
+    const query = profileId != null ? `?profile_id=${profileId}` : "";
+    const resp = await fetch(`${BASE}/documents/${id}/pdf${query}`);
     if (!resp.ok) {
       throw new Error(`PDF generation failed (${resp.status})`);
     }
