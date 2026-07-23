@@ -495,6 +495,10 @@ button.btn:disabled {
 .admin-scroll-cue span { color: var(--accent); font-size: 1rem; }
 .admin-pagination { align-items: center; display: flex; justify-content: space-between; margin-top: 12px; }
 .admin-pagination div { display: flex; gap: 6px; }
+.search-results-pagination { align-items: center; display: flex; justify-content: space-between; margin: 16px 0 10px; }
+.search-results-pagination label { align-items: center; display: flex; gap: 7px; margin: 0; }
+.search-results-pagination select { margin: 0; width: auto; }
+.search-results-pages { align-items: center; display: flex; gap: 6px; }
 .admin-edit-modal { max-height: min(760px, 90vh); overflow: auto; width: min(760px, 100%); }
 .admin-edit-fields { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .admin-edit-fields label { display: grid; font-size: .8rem; gap: 4px; }

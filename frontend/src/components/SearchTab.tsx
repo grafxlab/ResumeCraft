@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Eye, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, X } from "lucide-react";
 import { api } from "../api";
 import { matchStyle } from "../match";
 import type {
@@ -18,6 +18,13 @@ interface Props {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function savedResultsPageSize(): number | "all" {
+  const saved = localStorage.getItem("search.resultsPageSize");
+  return saved === "all" || [5, 10, 25, 50].includes(Number(saved))
+    ? saved === "all" ? "all" : Number(saved)
+    : 5;
+}
 
 function matchKeywords(notes: string | null): {
   matched: string;
@@ -48,6 +55,8 @@ export default function SearchTab({
   const [sources, setSources] = useState<string[]>(["adzuna", "jsearch"]);
   const [available, setAvailable] = useState<string[]>([]);
   const [jobs, setJobs] = useState<JobPosting[]>([]);
+  const [resultsPageSize, setResultsPageSize] = useState<number | "all">(savedResultsPageSize);
+  const [resultsPage, setResultsPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<{
@@ -76,6 +85,12 @@ export default function SearchTab({
   const editingDocument = viewingDocumentId == null
     ? null
     : Object.values(docs).flat().find((doc) => doc.id === viewingDocumentId) ?? null;
+  const totalResultPages = resultsPageSize === "all"
+    ? 1
+    : Math.max(1, Math.ceil(jobs.length / resultsPageSize));
+  const displayedJobs = resultsPageSize === "all"
+    ? jobs
+    : jobs.slice((resultsPage - 1) * resultsPageSize, resultsPage * resultsPageSize);
 
   useEffect(() => {
     localStorage.setItem("search.query", query);
@@ -84,6 +99,14 @@ export default function SearchTab({
   useEffect(() => {
     localStorage.setItem("search.location", location);
   }, [location]);
+
+  useEffect(() => {
+    localStorage.setItem("search.resultsPageSize", String(resultsPageSize));
+  }, [resultsPageSize]);
+
+  useEffect(() => {
+    setResultsPage((current) => Math.min(current, totalResultPages));
+  }, [totalResultPages]);
 
   // Restore cached results (valid for 24h). Results only refresh on Search.
   useEffect(() => {
@@ -163,6 +186,7 @@ export default function SearchTab({
         profile?.id,
       );
       setJobs(results);
+      setResultsPage(1);
       const ts = Date.now();
       setCachedAt(ts);
       localStorage.setItem(
@@ -473,7 +497,34 @@ export default function SearchTab({
         </div>
       )}
 
-      {jobs.map((job) => {
+      {jobs.length > 0 && (
+        <div className="search-results-pagination">
+          <label>
+            Display
+            <select
+              value={resultsPageSize}
+              onChange={(event) => {
+                setResultsPageSize(event.target.value === "all" ? "all" : Number(event.target.value));
+                setResultsPage(1);
+              }}
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value="all">All</option>
+            </select>
+            jobs
+          </label>
+          <div className="search-results-pages">
+            <span className="meta">Page {resultsPage} of {totalResultPages}</span>
+            <button className="icon-btn" disabled={resultsPage <= 1} onClick={() => setResultsPage((page) => page - 1)} aria-label="Previous results page" title="Previous page"><ChevronLeft size={16} aria-hidden="true" /></button>
+            <button className="icon-btn" disabled={resultsPage >= totalResultPages} onClick={() => setResultsPage((page) => page + 1)} aria-label="Next results page" title="Next page"><ChevronRight size={16} aria-hidden="true" /></button>
+          </div>
+        </div>
+      )}
+
+      {displayedJobs.map((job) => {
         const jobDocuments = docs[job.id] ?? [];
         const resumeDocument = [...jobDocuments]
           .reverse()
