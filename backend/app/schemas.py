@@ -30,6 +30,7 @@ class AuthUserOut(BaseModel):
 
 class AuthSessionOut(BaseModel):
     token: str
+    session_id: str
     user: AuthUserOut
 
 

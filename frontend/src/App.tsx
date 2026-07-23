@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { CircleHelp, CircleUserRound, Moon, Sun } from "lucide-react";
 import { api } from "./api";
 import ApplicationsTab from "./components/ApplicationsTab";
+import AdminTab from "./components/AdminTab";
 import AuthPage from "./components/AuthPage";
 import InfoPages, { type InfoPageName } from "./components/InfoPages";
 import LandingPage from "./components/LandingPage";
@@ -9,7 +10,7 @@ import ProfileTab from "./components/ProfileTab";
 import SearchTab from "./components/SearchTab";
 import type { AuthSession, AuthUser, Profile } from "./types";
 
-type Tab = "profile" | "search" | "applications";
+type Tab = "profile" | "search" | "applications" | "admin";
 type Theme = "dark" | "light";
 type View = "landing" | "auth" | "app";
 
@@ -100,7 +101,12 @@ export default function App() {
     setTab(t);
   };
 
-  const signOut = () => {
+  const signOut = async () => {
+    try {
+      await api.signOut();
+    } catch {
+      // Clear the local session even when the server is unavailable.
+    }
     localStorage.removeItem("auth.token");
     setAuthUser(null);
     setProfile(null);
@@ -195,7 +201,7 @@ export default function App() {
               <button onClick={() => { selectTab("profile"); setProfileMenuOpen(false); }}>
                 View Profile
               </button>
-              <button onClick={signOut}>Sign Out</button>
+              <button onClick={() => void signOut()}>Sign Out</button>
             </div>
           )}
         </div>
@@ -218,6 +224,12 @@ export default function App() {
           onClick={() => selectTab("profile")}
         >
           Profile
+        </button>
+        <button
+          className={`tab ${tab === "admin" && !infoPage ? "active" : ""}`}
+          onClick={() => selectTab("admin")}
+        >
+          Admin
         </button>
       </div>
 
@@ -246,6 +258,7 @@ export default function App() {
           {tab === "profile" && (
             <ProfileTab profile={profile} onSaved={setProfile} />
           )}
+          {tab === "admin" && <AdminTab />}
         </>
       )}
 

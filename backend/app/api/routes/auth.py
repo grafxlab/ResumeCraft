@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import smtplib
+from datetime import datetime, timezone
 from email.message import EmailMessage
 from urllib.parse import urlencode
+from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
@@ -17,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_session
-from app.models import User
+from app.models import LoginHistory, User
 from app.schemas import AuthSessionOut, AuthUserOut, LoginRequest, MessageOut, SignUpRequest
 
 logger = logging.getLogger(__name__)
@@ -40,9 +42,33 @@ def _user_out(user: User) -> AuthUserOut:
     )
 
 
-def _session_for(user: User) -> AuthSessionOut:
-    token = _serializer().dumps({"user_id": user.id}, salt="session")
-    return AuthSessionOut(token=token, user=_user_out(user))
+async def _session_for(user: User, session: AsyncSession) -> AuthSessionOut:
+    session_id = str(uuid4())
+    session.add(
+        LoginHistory(
+            user_id=user.id,
+            email=user.email,
+            session_id=session_id,
+            successful=True,
+        )
+    )
+    await session.commit()
+    token = _serializer().dumps({"user_id": user.id, "session_id": session_id}, salt="session")
+    return AuthSessionOut(token=token, session_id=session_id, user=_user_out(user))
+
+
+async def _record_failed_login(
+    session: AsyncSession, email: str, user: User | None, reason: str
+) -> None:
+    session.add(
+        LoginHistory(
+            user_id=user.id if user else None,
+            email=email,
+            successful=False,
+            failure_reason=reason,
+        )
+    )
+    await session.commit()
 
 
 async def current_user(
@@ -59,6 +85,13 @@ async def current_user(
         )
     except (BadSignature, SignatureExpired) as exc:
         raise HTTPException(status_code=401, detail="Session expired") from exc
+    session_id = payload.get("session_id")
+    if session_id:
+        login = await session.scalar(
+            select(LoginHistory).where(LoginHistory.session_id == session_id)
+        )
+        if login is None or login.logout_at is not None:
+            raise HTTPException(status_code=401, detail="Session is no longer active")
     user = await session.get(User, payload.get("user_id"))
     if user is None:
         raise HTTPException(status_code=401, detail="Account not found")
@@ -138,32 +171,61 @@ async def confirm_email(
     user.is_email_verified = True
     await session.commit()
     await session.refresh(user)
-    return _session_for(user)
+    return await _session_for(user, session)
 
 
 @router.post("/login", response_model=AuthSessionOut)
 async def login(
     payload: LoginRequest, session: AsyncSession = Depends(get_session)
 ) -> AuthSessionOut:
+    email = payload.email.strip().lower()
     user = await session.scalar(
-        select(User).where(User.email == payload.email.strip().lower())
+        select(User).where(User.email == email)
     )
     if user is None or user.password_hash is None or not password_hash.verify(
         payload.password, user.password_hash
     ):
+        await _record_failed_login(session, email, user, "Incorrect email or password")
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.is_email_verified:
         await _send_confirmation(user)
+        await _record_failed_login(session, email, user, "Email address not confirmed")
         raise HTTPException(
             status_code=403,
             detail="Confirm your email first. A new confirmation link was sent.",
         )
-    return _session_for(user)
+    return await _session_for(user, session)
 
 
 @router.get("/me", response_model=AuthUserOut)
 async def get_current_user(user: User = Depends(current_user)) -> AuthUserOut:
     return _user_out(user)
+
+
+@router.post("/logout", status_code=204)
+async def logout(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Sign in required")
+    try:
+        payload = _serializer().loads(
+            credentials.credentials,
+            salt="session",
+            max_age=SESSION_MAX_AGE_SECONDS,
+        )
+    except (BadSignature, SignatureExpired) as exc:
+        raise HTTPException(status_code=401, detail="Session expired") from exc
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Session cannot be signed out")
+    login = await session.scalar(select(LoginHistory).where(LoginHistory.session_id == session_id))
+    if login is None or login.logout_at is not None:
+        raise HTTPException(status_code=401, detail="Session is no longer active")
+    login.logout_at = datetime.now(timezone.utc)
+    await session.commit()
+    return Response(status_code=204)
 
 
 @router.get("/google/login")
@@ -230,5 +292,5 @@ async def google_callback(
         user.is_email_verified = True
     await session.commit()
     await session.refresh(user)
-    token = _session_for(user).token
+    token = (await _session_for(user, session)).token
     return RedirectResponse(f"{settings.frontend_url}/?auth_token={token}")

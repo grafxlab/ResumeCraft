@@ -64,6 +64,26 @@ class User(Base, TimestampMixin):
     resume_templates: Mapped[list[ResumeTemplate]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    login_history: Mapped[list[LoginHistory]] = relationship(back_populates="user")
+
+
+class LoginHistory(Base):
+    __tablename__ = "login_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), unique=True, index=True)
+    successful: Mapped[bool] = mapped_column(default=False, index=True)
+    failure_reason: Mapped[str | None] = mapped_column(String(200))
+    login_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    logout_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User | None] = relationship(back_populates="login_history")
 
 
 class ResumeTemplate(Base, TimestampMixin):

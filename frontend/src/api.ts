@@ -1,5 +1,7 @@
 import type {
   Application,
+  AdminTableData,
+  AdminTableSummary,
   ApplicationStatus,
   AuthSession,
   AuthUser,
@@ -36,6 +38,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // Administration
+  listAdminTables: () => request<AdminTableSummary[]>("/admin/tables"),
+  getAdminTable: (
+    name: string,
+    params: {
+      page: number;
+      page_size: number;
+      search?: string;
+      sort_by?: string;
+      sort_dir: "asc" | "desc";
+    },
+  ) => {
+    const query = new URLSearchParams(
+      Object.entries(params).filter(([, value]) => value != null && value !== "") as [string, string][],
+    );
+    return request<AdminTableData>(`/admin/tables/${encodeURIComponent(name)}?${query}`);
+  },
+  updateAdminRow: (table: string, id: number, data: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/admin/tables/${encodeURIComponent(table)}/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+  deleteAdminRow: async (table: string, id: number): Promise<void> => {
+    const response = await fetch(`${BASE}/admin/tables/${encodeURIComponent(table)}/${id}`, { method: "DELETE" });
+    if (!response.ok && response.status !== 204) throw new Error(`Delete failed (${response.status})`);
+  },
+
   // Authentication
   signUp: (email: string, password: string) =>
     request<{ message: string }>("/auth/signup", {
@@ -49,6 +78,17 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   currentUser: () => request<AuthUser>("/auth/me"),
+  signOut: async (): Promise<void> => {
+    const resp = await fetch(`${BASE}/auth/logout`, {
+      method: "POST",
+      headers: {
+        ...(localStorage.getItem("auth.token")
+          ? { Authorization: `Bearer ${localStorage.getItem("auth.token")}` }
+          : {}),
+      },
+    });
+    if (!resp.ok && resp.status !== 204) throw new Error(`Sign out failed (${resp.status})`);
+  },
   googleLoginUrl: () => `${BASE}/auth/google/login`,
 
   // Profiles

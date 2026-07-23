@@ -23,6 +23,7 @@ export interface AuthUser {
 
 export interface AuthSession {
   token: string;
+  session_id: string;
   user: AuthUser;
 }
 
@@ -48,6 +49,21 @@ export interface TextLinkItem {
   text: string;
   link: string;
   kind?: "linkedin" | "website";
+}
+
+export interface AdminTableSummary {
+  name: string;
+  columns: string[];
+}
+
+export interface AdminTableData {
+  table: string;
+  columns: string[];
+  primary_key: string[];
+  rows: Record<string, unknown>[];
+  page: number;
+  page_size: number;
+  total: number;
 }
 
 export interface IgnoredWord {
