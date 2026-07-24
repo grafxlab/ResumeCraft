@@ -9,6 +9,7 @@ interface Props {
   page: InfoPageName;
   onBack: () => void;
   onNavigate: (page: InfoPageName) => void;
+  showAccountLinks?: boolean;
 }
 
 const TITLES: Record<InfoPageName, string> = {
@@ -19,7 +20,12 @@ const TITLES: Record<InfoPageName, string> = {
   about: "About ResumeCraft",
 };
 
-export default function InfoPages({ page, onBack, onNavigate }: Props) {
+export default function InfoPages({
+  page,
+  onBack,
+  onNavigate,
+  showAccountLinks = true,
+}: Props) {
   return (
     <div className="panel info-page">
       <button className="btn secondary" onClick={onBack}>
@@ -27,7 +33,9 @@ export default function InfoPages({ page, onBack, onNavigate }: Props) {
       </button>
       <h2>{TITLES[page]}</h2>
       {page === "about" && <About />}
-      {page === "support" && <Support onNavigate={onNavigate} />}
+      {page === "support" && (
+        <Support onNavigate={onNavigate} showAccountLinks={showAccountLinks} />
+      )}
       {page === "templates" && <ResumeTemplates />}
       {page === "privacy" && <Privacy />}
       {page === "terms" && <Terms />}
@@ -76,17 +84,22 @@ function About() {
   );
 }
 
-function Support({ onNavigate }: Pick<Props, "onNavigate">) {
+function Support({
+  onNavigate,
+  showAccountLinks,
+}: Pick<Props, "onNavigate" | "showAccountLinks">) {
   return (
     <div className="prose">
       <p>Need help using ResumeCraft?</p>
       <ul>
-        <li>
-          <button className="link-btn info-link" onClick={() => onNavigate("templates")}>
-            Create and use resume templates
-          </button>
-          .
-        </li>
+        {showAccountLinks && (
+          <li>
+            <button className="link-btn info-link" onClick={() => onNavigate("templates")}>
+              Create and use resume templates
+            </button>
+            .
+          </li>
+        )}
         <li>
           Email us at <a href="mailto:support@gl2.example">support@gl2.example</a>
           .

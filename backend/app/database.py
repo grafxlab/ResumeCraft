@@ -190,6 +190,12 @@ async def init_db() -> None:
         await conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_users_plan ON users (plan)")
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE job_postings ADD COLUMN IF NOT EXISTS "
+                "salary_period VARCHAR(20)"
+            )
+        )
 
     from app.services.ai_usage import backfill_missing_ai_usage_costs
     from app.services.admin_bootstrap import bootstrap_admin

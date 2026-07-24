@@ -22,11 +22,11 @@ export default function DocumentViewer({ documentId, onClose }: Props) {
 
   const downloadPdf = async () => {
     try {
-      const blob = await api.downloadDocumentPdf(documentId);
+      const { blob, filename } = await api.downloadDocumentPdf(documentId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${doc?.type ?? "document"}_${documentId}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -46,7 +46,9 @@ export default function DocumentViewer({ documentId, onClose }: Props) {
                 ? "Resume"
                 : "Cover letter"
               : "Document"}
-            {doc && ` #${doc.id}`}
+            {doc && (doc.file_path
+              ? ` · ${doc.file_path.replace(/\.pdf$/i, "")}`
+              : ` #${doc.id}`)}
           </strong>
           <div style={{ display: "flex", gap: 8 }}>
             {doc && (

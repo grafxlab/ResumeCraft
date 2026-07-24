@@ -16,6 +16,7 @@ from app.schemas import (
     JobStatusUpdate,
     ManualJobImportOut,
     ManualJobImportRequest,
+    ManualJobScoreOut,
     ManualJobUpsert,
 )
 from app.services import job_importer, matcher
@@ -92,6 +93,10 @@ def _apply_manual_job(job: JobPosting, payload: ManualJobUpsert) -> None:
     job.location = payload.location.strip() if payload.location else None
     job.url = payload.url.strip() if payload.url else ""
     job.description = description
+    job.salary_min = payload.salary_min
+    job.salary_max = payload.salary_max
+    job.currency = payload.currency.strip().upper() if payload.currency else None
+    job.salary_period = payload.salary_period.strip().lower() if payload.salary_period else None
     job.employment_type = (
         payload.employment_type.strip() if payload.employment_type else None
     )
@@ -130,6 +135,7 @@ async def search_jobs(
             "salary_min": job.salary_min,
             "salary_max": job.salary_max,
             "currency": job.currency,
+            "salary_period": job.salary_period,
             "employment_type": job.employment_type,
             "category": job.category,
             "posted_at": job.posted_at,
@@ -139,7 +145,14 @@ async def search_jobs(
             .values(**values)
             .on_conflict_do_update(
                 index_elements=["source", "external_id"],
-                set_={"url": job.url, "description": job.description},
+                set_={
+                    "url": job.url,
+                    "description": job.description,
+                    "salary_min": job.salary_min,
+                    "salary_max": job.salary_max,
+                    "currency": job.currency,
+                    "salary_period": job.salary_period,
+                },
             )
             .returning(JobPosting.id)
         )
@@ -258,6 +271,29 @@ async def import_manual_job(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/manual/preview-score", response_model=ManualJobScoreOut)
+async def preview_manual_job_score(
+    payload: ManualJobUpsert,
+    profile_id: int = Query(),
+    user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, float | str]:
+    profile, ignored_words = await _profile_match_context(profile_id, session)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    job = JobPosting(
+        user_id=user.id,
+        source="manual",
+        external_id="manual-preview",
+        url="",
+        title="",
+        status=JobStatus.NEW,
+    )
+    _apply_manual_job(job, payload)
+    match_score, match_notes = matcher.score_job(job, profile, ignored_words)
+    return {"match_score": match_score, "match_notes": match_notes}
 
 
 @router.put("/{job_id}/manual", response_model=JobPostingOut)

@@ -19,6 +19,7 @@ class NormalizedJob:
     salary_min: float | None = None
     salary_max: float | None = None
     currency: str | None = None
+    salary_period: str | None = None
     employment_type: str | None = None
     category: str | None = None
     posted_at: datetime | None = None

@@ -13,6 +13,7 @@ import type {
   JobPosting,
   ManualJobImport,
   ManualJobInput,
+  ManualJobScore,
   Profile,
   ResumeTemplate,
 } from "./types";
@@ -128,6 +129,11 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+  updateAdditionalInformation: (id: number, items: Profile["additional_information_items"]) =>
+    request<Profile>(`/profiles/${id}/additional-information`, {
+      method: "PATCH",
+      body: JSON.stringify({ additional_information_items: items }),
+    }),
   updateProfileTemplate: (
     id: number,
     template_id: number | null,
@@ -205,6 +211,11 @@ export const api = {
     request<ManualJobImport>("/jobs/manual/import", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+  previewManualJobScore: (profileId: number, data: ManualJobInput) =>
+    request<ManualJobScore>(`/jobs/manual/preview-score?profile_id=${profileId}`, {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
   updateManualJob: (jobId: number, profileId: number, data: ManualJobInput) =>
     request<JobPosting>(`/jobs/${jobId}/manual?profile_id=${profileId}`, {
@@ -317,7 +328,10 @@ export const api = {
   listDocuments: (jobId?: number) =>
     request<Document[]>(`/documents${jobId ? `?job_id=${jobId}` : ""}`),
   getDocument: (id: number) => request<Document>(`/documents/${id}`),
-  downloadDocumentPdf: async (id: number, profileId?: number): Promise<Blob> => {
+  downloadDocumentPdf: async (
+    id: number,
+    profileId?: number,
+  ): Promise<{ blob: Blob; filename: string }> => {
     const query = profileId != null ? `?profile_id=${profileId}` : "";
     const resp = await fetch(`${BASE}/documents/${id}/pdf${query}`);
     if (!resp.ok) {
@@ -330,7 +344,10 @@ export const api = {
       }
       throw new Error(detail);
     }
-    return resp.blob();
+    const disposition = resp.headers.get("Content-Disposition") ?? "";
+    const filename = disposition.match(/filename="([^"]+)"/i)?.[1]
+      ?? `document_${id}.pdf`;
+    return { blob: await resp.blob(), filename };
   },
 
   // Applications

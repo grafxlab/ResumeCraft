@@ -5,7 +5,7 @@ import ApplicationsTab from "./components/ApplicationsTab";
 import AdminTab from "./components/AdminTab";
 import AuthPage from "./components/AuthPage";
 import InfoPages, { type InfoPageName } from "./components/InfoPages";
-import LandingPage from "./components/LandingPage";
+import LandingPage, { type PublicInfoPageName } from "./components/LandingPage";
 import ProfileTab from "./components/ProfileTab";
 import SearchTab from "./components/SearchTab";
 import type { AuthSession, AuthUser, Profile } from "./types";
@@ -33,9 +33,12 @@ export default function App() {
   );
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute(
+      "data-theme",
+      view === "landing" ? "light" : theme,
+    );
     localStorage.setItem("theme", theme);
-  }, [theme]);
+  }, [theme, view]);
 
   useEffect(() => {
     if (tab === "admin" && authUser?.role !== "admin") setTab("search");
@@ -121,16 +124,23 @@ export default function App() {
   if (view === "landing") {
     return (
       <LandingPage
+        appVersion={APP_VERSION}
+        infoPage={infoPage === "support" || infoPage === "privacy" || infoPage === "terms"
+          ? infoPage
+          : null}
         onStart={() => {
+          setInfoPage(null);
           setAuthMode("signup");
           setAuthMessage(null);
           setView("auth");
         }}
         onLogin={() => {
+          setInfoPage(null);
           setAuthMode("login");
           setAuthMessage(null);
           setView("auth");
         }}
+        onNavigate={(page: PublicInfoPageName | null) => setInfoPage(page)}
       />
     );
   }

@@ -170,6 +170,7 @@ export interface JobPosting {
   salary_min: number | null;
   salary_max: number | null;
   currency: string | null;
+  salary_period: string | null;
   employment_type: string | null;
   category: string | null;
   posted_at: string | null;
@@ -187,6 +188,15 @@ export interface ManualJobInput {
   url: string | null;
   description: string;
   employment_type: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  salary_period: string | null;
+}
+
+export interface ManualJobScore {
+  match_score: number;
+  match_notes: string;
 }
 
 export interface ManualJobImport {
@@ -197,6 +207,10 @@ export interface ManualJobImport {
   url: string;
   description: string | null;
   employment_type: string | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  currency: string | null;
+  salary_period: string | null;
   duplicate_job: JobPosting | null;
 }
 
@@ -232,5 +246,9 @@ export interface Application {
     url: string;
     source: string;
     match_score: number | null;
+    salary_min: number | null;
+    salary_max: number | null;
+    currency: string | null;
+    salary_period: string | null;
   };
 }

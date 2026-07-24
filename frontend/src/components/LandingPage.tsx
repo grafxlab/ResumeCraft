@@ -1,8 +1,14 @@
 import { Check } from "lucide-react";
+import InfoPages, { type InfoPageName } from "./InfoPages";
+
+export type PublicInfoPageName = Extract<InfoPageName, "support" | "privacy" | "terms">;
 
 interface Props {
+  appVersion: string;
+  infoPage: PublicInfoPageName | null;
   onStart: () => void;
   onLogin: () => void;
+  onNavigate: (page: PublicInfoPageName | null) => void;
 }
 
 const features = [
@@ -48,16 +54,22 @@ const plans = [
   },
 ];
 
-export default function LandingPage({ onStart, onLogin }: Props) {
+export default function LandingPage({
+  appVersion,
+  infoPage,
+  onStart,
+  onLogin,
+  onNavigate,
+}: Props) {
   return (
     <main className="landing">
       <header className="landing-nav">
         <div className="brand landing-brand">
-          <img src="/ResumeCraftLogo.png" alt="ResumeCraft logo" className="app-logo" />
+          {/* <img src="/ResumeCraftLogo.png" alt="ResumeCraft logo" className="app-logo" />
           <div className="brand-copy">
             <strong><span className="brandTitle brandTitle1">Resume</span><span className="brandTitle brandTitle2">Craft</span></strong>
             <p>Find the Job. Craft Your Story.</p>
-          </div>
+          </div> */}
         </div>
         <div className="landing-nav-actions">
           <button className="text-action" onClick={onLogin}>Log in</button>
@@ -65,9 +77,26 @@ export default function LandingPage({ onStart, onLogin }: Props) {
         </div>
       </header>
 
+      {infoPage ? (
+        <InfoPages
+          page={infoPage}
+          onBack={() => onNavigate(null)}
+          onNavigate={(page) => {
+            if (page === "support" || page === "privacy" || page === "terms") {
+              onNavigate(page);
+            }
+          }}
+          showAccountLinks={false}
+        />
+      ) : (
+        <>
       <section className="landing-hero">
-        <p className="eyebrow">A calmer way to job search</p>
-        <h1>ResumeCraft</h1>
+        <p className="eyebrow">Find Your Job. Craft Your Story.</p>
+        {/* <h1>ResumeCraft</h1> */}
+        <img src="/ResumeCraftLogo.png" alt="ResumeCraft logo" className="main-logo" />
+        <div className="hero-subtitle">
+          <strong><span className="brandTitleLg brandTitle1">Resume</span><span className="brandTitleLg brandTitle2">Craft</span></strong>
+        </div>
         <p className="landing-lede">
           A modern workspace for turning your experience into thoughtful,
           job-specific applications. ResumeCraft gets smarter as you use it.
@@ -128,6 +157,28 @@ export default function LandingPage({ onStart, onLogin }: Props) {
         </div>
         <p className="pricing-footnote">One resume or cover letter counts as one generated document. Cancel or change plans at any time.</p>
       </section>
+        </>
+      )}
+
+      <footer className="app-footer landing-footer">
+        <div className="footer-left">
+          <strong><span className="brandTitle1">Resume</span><span className="brandTitle2">Craft</span></strong> <span className="meta">v{appVersion}</span>
+          <div className="meta">
+            Copyright &copy; {new Date().getFullYear()} GL2, LLC. All rights reserved.
+          </div>
+        </div>
+        <nav className="footer-links" aria-label="Footer">
+          <button className="link-btn" onClick={() => onNavigate("support")}>
+            Support
+          </button>
+          <button className="link-btn" onClick={() => onNavigate("privacy")}>
+            Privacy Policy
+          </button>
+          <button className="link-btn" onClick={() => onNavigate("terms")}>
+            Terms of Service
+          </button>
+        </nav>
+      </footer>
     </main>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { matchStyle } from "../match";
 import { renderMarkdown } from "../pdf";
 import type { Document } from "../types";
 import Spinner from "./Spinner";
@@ -8,6 +9,7 @@ interface Props {
   doc: Document;
   profileId: number | undefined;
   onChange: (doc: Document) => void;
+  matchScore?: number | null;
   compact?: boolean;
   initialPreview?: boolean;
 }
@@ -16,6 +18,7 @@ export default function DocumentEditor({
   doc,
   profileId,
   onChange,
+  matchScore,
   compact = false,
   initialPreview = false,
 }: Props) {
@@ -119,11 +122,11 @@ export default function DocumentEditor({
       if (dirty) {
         onChange(await api.updateDocument(doc.id, { content, profile_id: profileId }));
       }
-      const blob = await api.downloadDocumentPdf(doc.id, profileId);
+      const { blob, filename } = await api.downloadDocumentPdf(doc.id, profileId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${doc.type}_${doc.id}.pdf`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -146,9 +149,16 @@ export default function DocumentEditor({
     >
       <div style={{ display: "flex", justifyContent: "space-between" }}>
         <strong>
-          {label} #{doc.id} <span className="meta">(Markdown)</span>
+          {doc.file_path?.replace(/\.pdf$/i, "") ?? `${label} #${doc.id}`} <span className="meta">(Markdown)</span>
         </strong>
-        {doc.approved && <span className="badge score">approved</span>}
+        <div>
+          {matchScore != null && (
+            <span className="badge score" style={matchStyle(matchScore)}>
+              match {matchScore}
+            </span>
+          )}
+          {doc.approved && <span className="badge approved-badge">approved</span>}
+        </div>
       </div>
 
       <label>

@@ -62,6 +62,14 @@ class JSearchSource(JobSource):
             item.get("job_country"),
         ]
         location = ", ".join(p for p in location_parts if p) or None
+        salary_period = item.get("job_salary_period")
+        if isinstance(salary_period, str):
+            salary_period = salary_period.strip().lower()
+            salary_period = {"annual": "year", "yearly": "year"}.get(
+                salary_period, salary_period.rstrip("s")
+            )
+        if salary_period not in {"hour", "day", "week", "month", "year"}:
+            salary_period = None
 
         return NormalizedJob(
             source=self.name,
@@ -74,6 +82,7 @@ class JSearchSource(JobSource):
             salary_min=item.get("job_min_salary"),
             salary_max=item.get("job_max_salary"),
             currency=item.get("job_salary_currency"),
+            salary_period=salary_period,
             employment_type=item.get("job_employment_type"),
             category=item.get("job_category"),
             posted_at=posted_at,

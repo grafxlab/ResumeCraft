@@ -174,6 +174,7 @@ class JobPosting(Base, TimestampMixin):
     salary_min: Mapped[float | None] = mapped_column(Float)
     salary_max: Mapped[float | None] = mapped_column(Float)
     currency: Mapped[str | None] = mapped_column(String(10))
+    salary_period: Mapped[str | None] = mapped_column(String(20))
     employment_type: Mapped[str | None] = mapped_column(String(100))
     category: Mapped[str | None] = mapped_column(String(200))
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

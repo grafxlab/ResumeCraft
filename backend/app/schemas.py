@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models import ApplicationStatus, DocumentType, JobStatus
 
@@ -97,6 +98,10 @@ class ProfileCreate(ProfileBase):
     pass
 
 
+class ProfileAdditionalInformationUpdate(BaseModel):
+    additional_information_items: list[dict[str, str]]
+
+
 class ProfileTemplateUpdate(BaseModel):
     template_id: int | None = None
     document_type: str
@@ -135,6 +140,20 @@ class ManualJobUpsert(BaseModel):
     url: str | None = None
     description: str
     employment_type: str | None = None
+    salary_min: float | None = Field(default=None, ge=0)
+    salary_max: float | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=10)
+    salary_period: Literal["hour", "day", "week", "month", "year"] | None = None
+
+    @model_validator(mode="after")
+    def validate_salary_range(self) -> ManualJobUpsert:
+        if (
+            self.salary_min is not None
+            and self.salary_max is not None
+            and self.salary_min > self.salary_max
+        ):
+            raise ValueError("Salary minimum cannot exceed salary maximum")
+        return self
 
 
 class ManualJobImportRequest(BaseModel):
@@ -154,6 +173,7 @@ class JobPostingOut(ORMModel):
     salary_min: float | None
     salary_max: float | None
     currency: str | None
+    salary_period: str | None
     employment_type: str | None
     category: str | None
     posted_at: datetime | None
@@ -171,7 +191,16 @@ class ManualJobImportOut(BaseModel):
     url: str
     description: str | None = None
     employment_type: str | None = None
+    salary_min: float | None = None
+    salary_max: float | None = None
+    currency: str | None = None
+    salary_period: Literal["hour", "day", "week", "month", "year"] | None = None
     duplicate_job: JobPostingOut | None = None
+
+
+class ManualJobScoreOut(BaseModel):
+    match_score: float
+    match_notes: str
 
 
 class JobStatusUpdate(BaseModel):
@@ -259,6 +288,10 @@ class ApplicationJobInfo(BaseModel):
     url: str
     source: str
     match_score: float | None
+    salary_min: float | None
+    salary_max: float | None
+    currency: str | None
+    salary_period: str | None
 
 
 class ApplicationDetailOut(BaseModel):

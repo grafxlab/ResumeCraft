@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
+import unicodedata
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -29,6 +31,34 @@ DEFAULT_TEMPLATE_PATHS = {
     DocumentType.RESUME: DEFAULT_TEMPLATE_DIRECTORY / "default-resume-template.html",
     DocumentType.COVER_LETTER: DEFAULT_TEMPLATE_DIRECTORY / "default-letter-template.html",
 }
+
+
+def _filename_part(
+    value: str | None,
+    fallback: str,
+    max_length: int = 36,
+    max_words: int | None = None,
+) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "").encode("ascii", "ignore").decode()
+    normalized = normalized.replace("'", "")
+    words = re.findall(r"[a-z0-9]+", normalized.lower())
+    if max_words is not None:
+        words = words[:max_words]
+    part = "_".join(words).strip("_")
+    if len(part) > max_length:
+        part = part[:max_length].rsplit("_", 1)[0]
+    return part or fallback
+
+
+def _document_filename(
+    profile: Profile, job: JobPosting, doc_type: DocumentType
+) -> str:
+    name_parts = (profile.full_name or "").split()
+    last_name = _filename_part(name_parts[-1] if name_parts else None, "candidate", 24)
+    client_name = _filename_part(job.company, "company", 30)
+    kind = "resume" if doc_type == DocumentType.RESUME else "cover_letter"
+    short_title = _filename_part(job.title, "position", 40, max_words=4)
+    return f"{last_name}_{client_name}_{kind}_{short_title}.pdf"
 
 
 def _default_template_content(doc_type: DocumentType) -> str:
@@ -102,6 +132,7 @@ async def _generate(
         content=content,
         template_content=template_content,
         rendered_html=render_document_template(template_content, content, profile, job),
+        file_path=_document_filename(profile, job, doc_type),
     )
     session.add(doc)
     job.status = JobStatus.GENERATED
@@ -211,6 +242,8 @@ async def download_pdf(
         raise HTTPException(status_code=404, detail="Document not found")
 
     html: str | None = None
+    profile: Profile | None = None
+    job: JobPosting | None = None
     if profile_id is not None:
         profile = await session.get(Profile, profile_id)
         job = await session.get(JobPosting, doc.job_id)
@@ -242,8 +275,11 @@ async def download_pdf(
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    kind = "resume" if doc.type == DocumentType.RESUME else "cover_letter"
-    filename = f"{kind}_{doc.id}.pdf"
+    if profile is not None and job is not None:
+        filename = _document_filename(profile, job, doc.type)
+    else:
+        kind = "resume" if doc.type == DocumentType.RESUME else "cover_letter"
+        filename = doc.file_path or f"{kind}_{doc.id}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -261,13 +297,17 @@ async def update_document(
     doc = await session.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    profile: Profile | None = None
+    job: JobPosting | None = None
+    if payload.profile_id is not None:
+        profile = await session.get(Profile, payload.profile_id)
+        job = await session.get(JobPosting, doc.job_id)
+        if profile is None or job is None:
+            raise HTTPException(status_code=404, detail="Profile or job not found")
+        doc.file_path = _document_filename(profile, job, doc.type)
     if payload.content is not None:
         doc.content = payload.content
-        if doc.template_content is not None and payload.profile_id is not None:
-            profile = await session.get(Profile, payload.profile_id)
-            job = await session.get(JobPosting, doc.job_id)
-            if profile is None or job is None:
-                raise HTTPException(status_code=404, detail="Profile or job not found")
+        if doc.template_content is not None and profile is not None and job is not None:
             doc.rendered_html = render_document_template(
                 doc.template_content, doc.content, profile, job
             )
@@ -330,6 +370,7 @@ async def regenerate_document(
     doc.rendered_html = render_document_template(
         template_content, doc.content, profile, job
     )
+    doc.file_path = _document_filename(profile, job, doc.type)
     doc.approved = False
     await session.commit()
     await session.refresh(doc)

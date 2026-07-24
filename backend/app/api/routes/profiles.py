@@ -10,6 +10,7 @@ from app.models import IgnoredWord, Profile, ResumeTemplate, User
 from app.schemas import (
     IgnoredWordCreate,
     IgnoredWordOut,
+    ProfileAdditionalInformationUpdate,
     ProfileCreate,
     ProfileOut,
     ProfileTemplateUpdate,
@@ -119,6 +120,27 @@ async def update_profile(
     )
     for key, value in payload.model_dump().items():
         setattr(profile, key, value)
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+@router.patch("/{profile_id}/additional-information", response_model=ProfileOut)
+async def update_additional_information(
+    profile_id: int,
+    payload: ProfileAdditionalInformationUpdate,
+    _user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Profile:
+    profile = await session.get(Profile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    profile.additional_information_items = payload.additional_information_items
+    profile.additional_information = "\n".join(
+        item.get("text", "").strip()
+        for item in payload.additional_information_items
+        if item.get("text", "").strip()
+    ) or None
     await session.commit()
     await session.refresh(profile)
     return profile

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Eye } from "lucide-react";
 import { api } from "../api";
 import { matchStyle } from "../match";
-import type { Application, ApplicationStatus } from "../types";
+import { formatSalary } from "../salary";
+import type { Application, ApplicationStatus, Document } from "../types";
 import DocumentViewer from "./DocumentViewer";
 
 const STATUSES: ApplicationStatus[] = [
@@ -25,6 +27,7 @@ export default function ApplicationsTab({
   onFocusHandled,
 }: Props) {
   const [apps, setApps] = useState<Application[]>([]);
+  const [documentsByJob, setDocumentsByJob] = useState<Record<number, Document[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [viewingDocId, setViewingDocId] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Application | null>(null);
@@ -39,12 +42,29 @@ export default function ApplicationsTab({
   const [regeneratingDocumentId, setRegeneratingDocumentId] = useState<
     number | null
   >(null);
+  const [generatingDocument, setGeneratingDocument] = useState<{
+    applicationId: number;
+    type: "resume" | "cover_letter";
+  } | null>(null);
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const load = async () => {
     setError(null);
     try {
-      setApps(await api.listApplications());
+      const applications = await api.listApplications();
+      setApps(applications);
+      const documentResults = await Promise.allSettled(
+        applications.map(async (app) => [
+          app.job_id,
+          await api.listDocuments(app.job_id),
+        ] as const),
+      );
+      const resolvedDocuments = documentResults
+        .filter((result): result is PromiseFulfilledResult<readonly [number, Document[]]> =>
+          result.status === "fulfilled",
+        )
+        .map((result) => result.value);
+      setDocumentsByJob(Object.fromEntries(resolvedDocuments));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -91,7 +111,20 @@ export default function ApplicationsTab({
     }
   };
 
-  const fmt = (d: string | null) => (d ? new Date(d).toLocaleDateString() : "—");
+  const fmtTracked = (value: string | null) => {
+    if (!value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return new Intl.DateTimeFormat(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "short",
+    }).format(date);
+  };
   const fmtDateTime = (d: string | null) =>
     d ? new Date(d).toLocaleString() : "—";
 
@@ -157,6 +190,38 @@ export default function ApplicationsTab({
     }
   };
 
+  const generateDocument = async (
+    app: Application,
+    type: "resume" | "cover_letter",
+  ) => {
+    if (!profileId) {
+      setError("No active profile.");
+      return;
+    }
+    setGeneratingDocument({ applicationId: app.id, type });
+    setError(null);
+    try {
+      const document = type === "resume"
+        ? await api.generateResume(app.job_id, profileId)
+        : await api.generateCoverLetter(app.job_id, profileId);
+      const updated = await api.updateApplication(app.id, {
+        ...(type === "resume"
+          ? { resume_document_id: document.id }
+          : { cover_letter_document_id: document.id }),
+      });
+      setApps((current) => current.map((item) => item.id === app.id ? updated : item));
+      setDocumentsByJob((current) => ({
+        ...current,
+        [app.job_id]: [document, ...(current[app.job_id] ?? []).filter((item) => item.id !== document.id)],
+      }));
+      setViewingDocId(document.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setGeneratingDocument(null);
+    }
+  };
+
   return (
     <div>
       <div className="panel">
@@ -214,7 +279,17 @@ export default function ApplicationsTab({
       </div>
 
       {visibleApps.map((app) => (
-        <div
+        (() => {
+          const jobDocuments = documentsByJob[app.job_id] ?? [];
+          const resumeDocumentId = [...jobDocuments]
+            .reverse()
+            .find((document) => document.type === "resume")?.id
+            ?? app.resume_document_id;
+          const coverLetterDocumentId = [...jobDocuments]
+            .reverse()
+            .find((document) => document.type === "cover_letter")?.id
+            ?? app.cover_letter_document_id;
+          return <div
           className="panel"
           key={app.id}
           ref={(el) => {
@@ -244,6 +319,7 @@ export default function ApplicationsTab({
                 )}
               </div>
               <div className="meta">{app.job.company ?? "Unknown company"}</div>
+              {formatSalary(app.job) && <div className="meta">{formatSalary(app.job)}</div>}
             </div>
             <div style={{ textAlign: "right" }}>
               {app.job.match_score != null && (
@@ -287,7 +363,7 @@ export default function ApplicationsTab({
               View original posting ↗
             </a>
             {app.job.location ? ` · ${app.job.location}` : ""} · Tracked{" "}
-            {fmt(app.created_at)}
+            {fmtTracked(app.created_at)}
           </div>
 
           <div className="row" style={{ alignItems: "flex-end", marginTop: 6 }}>
@@ -325,62 +401,86 @@ export default function ApplicationsTab({
                 >
                   Set
                 </button>
+                <button
+                  className="btn secondary"
+                  style={{ padding: "4px 8px" }}
+                  disabled={!app.date_response}
+                  onClick={() => update(app, { date_response: null })}
+                >
+                  Reset
+                </button>
               </div>
             </div>
-            {app.status !== "draft" && (
-              <div>
-                <label>Documents</label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    className="btn secondary"
-                    disabled={!app.resume_document_id}
-                    onClick={() =>
-                      app.resume_document_id &&
-                      setViewingDocId(app.resume_document_id)
-                    }
-                  >
-                    Preview resume
-                  </button>
-                  <button
-                    className="btn secondary"
-                    disabled={
-                      !app.resume_document_id || regeneratingDocumentId !== null
-                    }
-                    onClick={() =>
-                      app.resume_document_id && regenerateDocument(app.resume_document_id)
-                    }
-                  >
-                    {regeneratingDocumentId === app.resume_document_id
-                      ? "Regenerating resume..."
-                      : "Regenerate resume"}
-                  </button>
-                  <button
-                    className="btn secondary"
-                    disabled={!app.cover_letter_document_id}
-                    onClick={() =>
-                      app.cover_letter_document_id &&
-                      setViewingDocId(app.cover_letter_document_id)
-                    }
-                  >
-                    Preview cover letter
-                  </button>
+            <div>
+              <label>Documents</label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  className="btn secondary"
+                  disabled={generatingDocument !== null || regeneratingDocumentId !== null}
+                  onClick={() => generateDocument(app, "resume")}
+                >
+                  {generatingDocument?.applicationId === app.id && generatingDocument.type === "resume"
+                    ? "Generating Resume..."
+                    : "Generate Resume"}
+                </button>
+                <button
+                  className="btn secondary"
+                  disabled={generatingDocument !== null || regeneratingDocumentId !== null}
+                  onClick={() => generateDocument(app, "cover_letter")}
+                >
+                  {generatingDocument?.applicationId === app.id && generatingDocument.type === "cover_letter"
+                    ? "Generating Cover Letter..."
+                    : "Generate Cover Letter"}
+                </button>
+                  {resumeDocumentId != null && (
+                    <button
+                      className="icon-btn"
+                      aria-label="View Resume"
+                      title="View Resume"
+                      onClick={() => setViewingDocId(resumeDocumentId)}
+                    >
+                      <Eye size={17} aria-hidden="true" />
+                    </button>
+                  )}
                   <button
                     className="btn secondary"
                     disabled={
-                      !app.cover_letter_document_id || regeneratingDocumentId !== null
+                      resumeDocumentId == null || regeneratingDocumentId !== null
                     }
                     onClick={() =>
-                      app.cover_letter_document_id &&
-                      regenerateDocument(app.cover_letter_document_id)
+                      resumeDocumentId != null && regenerateDocument(resumeDocumentId)
                     }
                   >
-                    {regeneratingDocumentId === app.cover_letter_document_id
-                      ? "Regenerating cover letter..."
-                      : "Regenerate cover letter"}
+                    {regeneratingDocumentId === resumeDocumentId
+                      ? "Regenerating Resume..."
+                      : "Regenerate Resume"}
                   </button>
-                </div>
+                  {coverLetterDocumentId != null && (
+                    <button
+                      className="icon-btn"
+                      aria-label="View Cover Letter"
+                      title="View Cover Letter"
+                      onClick={() => setViewingDocId(coverLetterDocumentId)}
+                    >
+                      <Eye size={17} aria-hidden="true" />
+                    </button>
+                  )}
+                  <button
+                    className="btn secondary"
+                    disabled={
+                      coverLetterDocumentId == null || regeneratingDocumentId !== null
+                    }
+                    onClick={() =>
+                      coverLetterDocumentId != null &&
+                      regenerateDocument(coverLetterDocumentId)
+                    }
+                  >
+                    {regeneratingDocumentId === coverLetterDocumentId
+                      ? "Regenerating Cover Letter..."
+                      : "Regenerate Cover Letter"}
+                  </button>
               </div>
-            )}
+            </div>
           </div>
 
           <label>Notes</label>
@@ -394,6 +494,7 @@ export default function ApplicationsTab({
             }}
           />
         </div>
+        })()
       ))}
 
       {viewingDocId != null && (

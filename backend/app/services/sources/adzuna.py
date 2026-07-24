@@ -66,6 +66,12 @@ class AdzunaSource(JobSource):
             salary_min=item.get("salary_min"),
             salary_max=item.get("salary_max"),
             currency="USD" if settings.adzuna_country == "us" else None,
+            salary_period=(
+                "year"
+                if item.get("salary_min") is not None
+                or item.get("salary_max") is not None
+                else None
+            ),
             employment_type=item.get("contract_time"),
             category=category,
             posted_at=posted_at,

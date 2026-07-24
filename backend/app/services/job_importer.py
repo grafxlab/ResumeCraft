@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import re
 import socket
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
@@ -51,6 +52,47 @@ def _valid_source(value: object) -> str | None:
     if "://" in source or "/" in source or ".com" in source.lower():
         return None
     return source
+
+
+def _salary_number(value: object) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if value >= 0 else None
+    if isinstance(value, str):
+        match = re.search(r"\d+(?:[,.]\d+)*", value)
+        if match:
+            try:
+                return float(match.group().replace(",", ""))
+            except ValueError:
+                return None
+    return None
+
+
+def _salary_currency(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    symbols = {"$": "USD", "£": "GBP", "€": "EUR"}
+    normalized = symbols.get(normalized, normalized)
+    return normalized if len(normalized) == 3 and normalized.isalpha() else None
+
+
+def _salary_period(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower().removeprefix("per ")
+    aliases = {
+        "hourly": "hour",
+        "daily": "day",
+        "weekly": "week",
+        "monthly": "month",
+        "annual": "year",
+        "annually": "year",
+        "yearly": "year",
+    }
+    normalized = aliases.get(normalized, normalized.rstrip("s"))
+    return normalized if normalized in {"hour", "day", "week", "month", "year"} else None
 
 
 def normalize_job_url(url: str) -> str:
@@ -215,9 +257,13 @@ async def import_job_from_url(url: str, user_id: int | None = None) -> dict:
         "Extract this job posting into JSON matching exactly this schema:\n"
         '{"title": string|null, "source": string|null, "company": string|null, '
         '"location": string|null, "description": string|null, '
-        '"employment_type": string|null}\n'
+        '"employment_type": string|null, "salary_min": number|null, '
+        '"salary_max": number|null, "currency": string|null, '
+        '"salary_period": "hour"|"day"|"week"|"month"|"year"|null}\n'
         "Use only facts present in the supplied page. Preserve the complete useful job "
-        "description, including responsibilities and qualifications. Respond with JSON only.\n\n"
+        "description, including responsibilities and qualifications. Capture salary only "
+        "when explicitly displayed. Use numeric salary amounts as displayed and an ISO 4217 "
+        "currency code. Respond with JSON only.\n\n"
         f"FINAL URL:\n{final_url}\n\n"
         f"PAGE METADATA:\n{json.dumps(parser.metadata)}\n\n"
         f"STRUCTURED DATA:\n{' '.join(parser.structured_data)}\n\n"
@@ -231,12 +277,16 @@ async def import_job_from_url(url: str, user_id: int | None = None) -> dict:
         user_id=user_id,
     )
     extracted = _extract_json(raw)
-    result = {
+    result: dict = {
         key: value.strip() if isinstance(value, str) and value.strip() else None
         for key, value in extracted.items()
         if key
         in {"title", "source", "company", "location", "description", "employment_type"}
     }
+    result["salary_min"] = _salary_number(extracted.get("salary_min"))
+    result["salary_max"] = _salary_number(extracted.get("salary_max"))
+    result["currency"] = _salary_currency(extracted.get("currency"))
+    result["salary_period"] = _salary_period(extracted.get("salary_period"))
     result["source"] = _source_from_url(final_url) or _valid_source(
         result.get("source")
     )

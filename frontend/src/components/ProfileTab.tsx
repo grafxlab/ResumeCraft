@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Eye, X } from "lucide-react";
+import { Eye, Trash2, Upload, X } from "lucide-react";
 import { api } from "../api";
 import type { IgnoredWord, Profile, ResumeTemplate, TextLinkItem } from "../types";
 import Spinner from "./Spinner";
@@ -49,6 +49,11 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     () => localStorage.getItem("profile.masterResumeExpanded") === "true",
   );
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const [templateNotice, setTemplateNotice] = useState<{
+    documentType: "resume" | "cover_letter";
+    message: string;
+    tone: "success" | "error";
+  } | null>(null);
   const [deletingTemplate, setDeletingTemplate] = useState<number | null>(null);
   const [templateEditor, setTemplateEditor] = useState<{
     id: number | null;
@@ -156,6 +161,12 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     api.listResumeTemplates("cover_letter").then(setCoverLetterTemplates).catch(() => setCoverLetterTemplates([]));
   }, []);
 
+  useEffect(() => {
+    if (!templateNotice) return;
+    const timeout = window.setTimeout(() => setTemplateNotice(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [templateNotice]);
+
   const unignoreWord = async (word: string) => {
     if (!profile) return;
     setUnignoringWord(word);
@@ -206,16 +217,25 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     documentType: "resume" | "cover_letter",
   ) => {
     if (!file) return;
-    if (!/\.(html?|md|txt)$/i.test(file.name)) {
-      setError("Upload an HTML, Markdown, or text template.");
+    if (!/\.html?$/i.test(file.name)) {
+      setTemplateNotice({
+        documentType,
+        message: "Upload an HTML template.",
+        tone: "error",
+      });
       return;
     }
     if (file.size > 250_000) {
-      setError("Template files must be 250 KB or smaller.");
+      setTemplateNotice({
+        documentType,
+        message: "Template files must be 250 KB or smaller.",
+        tone: "error",
+      });
       return;
     }
     setUploadingTemplate(true);
     setError(null);
+    setTemplateNotice(null);
     try {
       const content = await file.text();
       const placeholders = new Set(
@@ -232,7 +252,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
           "Templates need at least three supported placeholders for the selected document type.",
         );
       }
-      const name = file.name.replace(/\.(html?|md|txt)$/i, "") || "Document template";
+      const name = file.name.replace(/\.html?$/i, "") || "Document template";
       const templates = documentType === "resume" ? resumeTemplates : coverLetterTemplates;
       const duplicate = templates.find(
         (template) => template.name.trim().toLowerCase() === name.trim().toLowerCase(),
@@ -249,7 +269,11 @@ export default function ProfileTab({ profile, onSaved }: Props) {
         await saveTemplateUpload(name, content, documentType);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setTemplateNotice({
+        documentType,
+        message: e instanceof Error ? e.message : String(e),
+        tone: "error",
+      });
     } finally {
       setUploadingTemplate(false);
       const fileInput = documentType === "resume" ? templateFileRef : coverLetterTemplateFileRef;
@@ -282,9 +306,17 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (profile) {
       const updated = await api.updateProfileTemplate(profile.id, template.id, documentType);
       onSaved(updated);
-      setNotice(`${template.name} is now your default ${documentType === "resume" ? "resume" : "cover letter"} template.`);
+      setTemplateNotice({
+        documentType,
+        message: `${template.name} is now your default ${documentType === "resume" ? "resume" : "cover letter"} template.`,
+        tone: "success",
+      });
     } else {
-      setNotice(`Template uploaded. Create your profile to use ${template.name} by default.`);
+      setTemplateNotice({
+        documentType,
+        message: `Template uploaded. Create your profile to use ${template.name} by default.`,
+        tone: "success",
+      });
     }
   };
 
@@ -292,7 +324,11 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     if (!pendingTemplateUpload) return;
     const name = pendingTemplateUpload.name.trim();
     if (!name) {
-      setError("Template name is required.");
+      setTemplateNotice({
+        documentType: pendingTemplateUpload.documentType,
+        message: "Template name is required.",
+        tone: "error",
+      });
       return;
     }
     const replacingOriginal =
@@ -308,7 +344,11 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       );
       setPendingTemplateUpload(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setTemplateNotice({
+        documentType: pendingTemplateUpload.documentType,
+        message: e instanceof Error ? e.message : String(e),
+        tone: "error",
+      });
     } finally {
       setUploadingTemplate(false);
     }
@@ -685,16 +725,21 @@ export default function ProfileTab({ profile, onSaved }: Props) {
           Upload a PDF, DOCX, or TXT resume and AI will extract the fields for
           you to review.
         </p>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".pdf,.docx,.txt,.md"
-          disabled={importing}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) importResume(f);
-          }}
-        />
+        <div className="row" style={{ alignItems: "center", marginTop: 10 }}>
+          <label className="btn secondary template-upload">
+            {importing ? "Importing..." : "Import resume file"}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md"
+              disabled={importing}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) importResume(f);
+              }}
+            />
+          </label>
+        </div>
         {importing && (
           <p className="meta">
             <Spinner label="Extracting with AI…" />
@@ -750,7 +795,16 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       <TextLinkList
         label="Additional information"
         value={additionalInformationItems}
-        onChange={setAdditionalInformationItems}
+        onChange={async (items) => {
+          if (!profile) {
+            setAdditionalInformationItems(items);
+            return;
+          }
+          const updated = await api.updateAdditionalInformation(profile.id, items);
+          setAdditionalInformationItems(updated.additional_information_items);
+          onSaved(updated);
+          setNotice("Additional information saved.");
+        }}
         placeholders={["ADDITIONAL_INFORMATION"]}
       />
       <div
@@ -824,18 +878,23 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                 type="button"
                 className="icon-btn template-preview-btn"
                 aria-label="Edit and preview resume template"
-                title="Edit and preview resume template"
+                title="Preview"
                 disabled={loadingTemplateEditor}
                 onClick={() => void openTemplateEditor("resume")}
               >
                 <Eye size={17} aria-hidden="true" />
               </button>
-              <label className="btn secondary template-upload">
-                {uploadingTemplate ? "Uploading..." : "Upload resume template"}
+              <label
+                className="icon-btn template-preview-btn template-upload"
+                aria-label="Upload resume template"
+                aria-disabled={uploadingTemplate}
+                title="Upload"
+              >
+                <Upload size={17} aria-hidden="true" />
                 <input
                   ref={templateFileRef}
                   type="file"
-                  accept=".html,.htm,.md,.txt,text/html,text/plain,text/markdown"
+                  accept=".html,.htm,text/html"
                   disabled={uploadingTemplate}
                   onChange={(event) => void uploadTemplate(event.target.files?.[0], "resume")}
                 />
@@ -843,14 +902,19 @@ export default function ProfileTab({ profile, onSaved }: Props) {
               {resumeTemplateId != null && (
                 <button
                   type="button"
-                  className="btn secondary"
+                  className="icon-btn danger template-preview-btn"
+                  aria-label="Delete resume template"
+                  title="Delete"
                   disabled={deletingTemplate != null}
                   onClick={() => void deleteTemplate(resumeTemplateId, "resume")}
                 >
-                  {deletingTemplate === resumeTemplateId ? "Deleting..." : "Delete"}
+                  <Trash2 size={17} aria-hidden="true" />
                 </button>
               )}
             </div>
+            {templateNotice?.documentType === "resume" && (
+              <p className={`meta template-notice ${templateNotice.tone}`}>{templateNotice.message}</p>
+            )}
             <label>Cover letter template</label>
             <div className="profile-template-controls">
               <select
@@ -870,18 +934,23 @@ export default function ProfileTab({ profile, onSaved }: Props) {
                 type="button"
                 className="icon-btn template-preview-btn"
                 aria-label="Edit and preview cover letter template"
-                title="Edit and preview cover letter template"
+                title="Preview"
                 disabled={loadingTemplateEditor}
                 onClick={() => void openTemplateEditor("cover_letter")}
               >
                 <Eye size={17} aria-hidden="true" />
               </button>
-              <label className="btn secondary template-upload">
-                {uploadingTemplate ? "Uploading..." : "Upload cover letter template"}
+              <label
+                className="icon-btn template-preview-btn template-upload"
+                aria-label="Upload cover letter template"
+                aria-disabled={uploadingTemplate}
+                title="Upload"
+              >
+                <Upload size={17} aria-hidden="true" />
                 <input
                   ref={coverLetterTemplateFileRef}
                   type="file"
-                  accept=".html,.htm,.md,.txt,text/html,text/plain,text/markdown"
+                  accept=".html,.htm,text/html"
                   disabled={uploadingTemplate}
                   onChange={(event) => void uploadTemplate(event.target.files?.[0], "cover_letter")}
                 />
@@ -889,14 +958,19 @@ export default function ProfileTab({ profile, onSaved }: Props) {
               {coverLetterTemplateId != null && (
                 <button
                   type="button"
-                  className="btn secondary"
+                  className="icon-btn danger template-preview-btn"
+                  aria-label="Delete cover letter template"
+                  title="Delete"
                   disabled={deletingTemplate != null}
                   onClick={() => void deleteTemplate(coverLetterTemplateId, "cover_letter")}
                 >
-                  {deletingTemplate === coverLetterTemplateId ? "Deleting..." : "Delete"}
+                  <Trash2 size={17} aria-hidden="true" />
                 </button>
               )}
             </div>
+            {templateNotice?.documentType === "cover_letter" && (
+              <p className={`meta template-notice ${templateNotice.tone}`}>{templateNotice.message}</p>
+            )}
           </>
         )}
       </div>

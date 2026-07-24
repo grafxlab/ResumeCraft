@@ -3,12 +3,15 @@ import { Archive, ChevronLeft, ChevronRight, Eye, Pencil, Plus, Trash2, X } from
 import { api } from "../api";
 import { inferJobSource } from "../jobSource";
 import { matchStyle } from "../match";
+import { formatSalary } from "../salary";
 import { rankJobs, resultsPageForJob } from "../searchResults";
 import type {
   ApplicationStatus,
   Document,
   JobPosting,
+  JobStatus,
   ManualJobInput,
+  ManualJobScore,
   Profile,
 } from "../types";
 import DocumentEditor from "./DocumentEditor";
@@ -21,6 +24,11 @@ interface Props {
 }
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const JOB_STATUSES: JobStatus[] = ["new", "matched", "generated", "applied", "archived"];
+const GREATER_THAN_RANKING_THRESHOLDS = [90, 80, 70, 60, 50, 40, 30, 20, 10, 0];
+const LESS_THAN_RANKING_THRESHOLDS = [100, 90, 80, 70, 60, 50, 40, 30, 20, 10];
+type RankingFilter = "all" | "exact:100" | `gt:${number}` | `lt:${number}`;
+type DateSort = "ranked" | "date-desc" | "date-asc";
 
 const emptyManualJob = (): ManualJobInput => ({
   title: "",
@@ -30,6 +38,10 @@ const emptyManualJob = (): ManualJobInput => ({
   url: null,
   description: "",
   employment_type: null,
+  salary_min: null,
+  salary_max: null,
+  currency: null,
+  salary_period: null,
 });
 
 function normalizedJobSource(url: string, source: string | null): string | null {
@@ -44,6 +56,30 @@ function savedResultsPageSize(): number | "all" {
   return saved === "all" || [5, 10, 25, 50].includes(Number(saved))
     ? saved === "all" ? "all" : Number(saved)
     : 5;
+}
+
+function savedStatusFilter(): JobStatus | "all" {
+  const saved = localStorage.getItem("search.statusFilter");
+  return saved === "all" || JOB_STATUSES.includes(saved as JobStatus)
+    ? saved as JobStatus | "all"
+    : "all";
+}
+
+function savedRankingFilter(): RankingFilter {
+  const saved = localStorage.getItem("search.rankingFilter");
+  if (saved === "all" || saved === "exact:100") return saved;
+  if (GREATER_THAN_RANKING_THRESHOLDS.some((threshold) => saved === `gt:${threshold}`)) {
+    return saved as RankingFilter;
+  }
+  if (LESS_THAN_RANKING_THRESHOLDS.some((threshold) => saved === `lt:${threshold}`)) {
+    return saved as RankingFilter;
+  }
+  return "all";
+}
+
+function savedDateSort(): DateSort {
+  const saved = localStorage.getItem("search.dateSort");
+  return saved === "date-desc" || saved === "date-asc" ? saved : "ranked";
 }
 
 function matchKeywords(notes: string | null): {
@@ -77,6 +113,12 @@ export default function SearchTab({
   const [jobs, setJobs] = useState<JobPosting[]>([]);
   const [resultsPageSize, setResultsPageSize] = useState<number | "all">(savedResultsPageSize);
   const [resultsPage, setResultsPage] = useState(1);
+  const [resultsFilter, setResultsFilter] = useState(
+    () => localStorage.getItem("search.resultsFilter") ?? "",
+  );
+  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(savedStatusFilter);
+  const [rankingFilter, setRankingFilter] = useState<RankingFilter>(savedRankingFilter);
+  const [dateSort, setDateSort] = useState<DateSort>(savedDateSort);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<{
@@ -91,7 +133,7 @@ export default function SearchTab({
   >({});
   const [ignoredWords, setIgnoredWords] = useState<Set<string>>(new Set());
   const [selectedUnmatchedWord, setSelectedUnmatchedWord] = useState<{
-    jobId: number;
+    jobId: number | null;
     word: string;
   } | null>(null);
   const [ignoringWord, setIgnoringWord] = useState(false);
@@ -107,6 +149,8 @@ export default function SearchTab({
   } | null>(null);
   const [savingManualJob, setSavingManualJob] = useState(false);
   const [importingManualJob, setImportingManualJob] = useState(false);
+  const [manualJobScore, setManualJobScore] = useState<ManualJobScore | null>(null);
+  const [scoringManualJob, setScoringManualJob] = useState(false);
   const [manualJobAction, setManualJobAction] = useState<number | null>(null);
   const [newlySavedJobId, setNewlySavedJobId] = useState<number | null>(null);
 
@@ -116,15 +160,47 @@ export default function SearchTab({
   const editingDocument = viewingDocumentId == null
     ? null
     : Object.values(docs).flat().find((doc) => doc.id === viewingDocumentId) ?? null;
+  const normalizedResultsFilter = resultsFilter.trim().toLowerCase();
+  const filteredJobs = jobs
+    .filter((job) => {
+      if (statusFilter !== "all" && job.status !== statusFilter) return false;
+      if (rankingFilter !== "all") {
+        if (job.match_score == null) return false;
+        const [comparison, thresholdValue] = rankingFilter.split(":");
+        const threshold = Number(thresholdValue);
+        if (comparison === "exact" && job.match_score !== threshold) return false;
+        if (comparison === "gt" && job.match_score <= threshold) return false;
+        if (comparison === "lt" && job.match_score >= threshold) return false;
+      }
+      if (!normalizedResultsFilter) return true;
+      return [
+        job.title,
+        job.company,
+        job.location,
+        job.source,
+        job.manual_source,
+        job.description,
+        job.match_notes,
+      ].some((value) => value?.toLowerCase().includes(normalizedResultsFilter));
+    })
+    .sort((left, right) => {
+      if (dateSort === "ranked") return 0;
+      const leftDate = new Date(left.posted_at ?? left.created_at).getTime();
+      const rightDate = new Date(right.posted_at ?? right.created_at).getTime();
+      return dateSort === "date-asc" ? leftDate - rightDate : rightDate - leftDate;
+    });
+  const filtersAreActive = Boolean(
+    resultsFilter || statusFilter !== "all" || rankingFilter !== "all" || dateSort !== "ranked",
+  );
   const totalResultPages = resultsPageSize === "all"
     ? 1
-    : Math.max(1, Math.ceil(jobs.length / resultsPageSize));
+    : Math.max(1, Math.ceil(filteredJobs.length / resultsPageSize));
   const displayedJobs = resultsPageSize === "all"
-    ? jobs
-    : jobs.slice((resultsPage - 1) * resultsPageSize, resultsPage * resultsPageSize);
+    ? filteredJobs
+    : filteredJobs.slice((resultsPage - 1) * resultsPageSize, resultsPage * resultsPageSize);
   const newlySavedJobIsDisplayed = newlySavedJobId != null
     && displayedJobs.some((job) => job.id === newlySavedJobId);
-  const resultsPagination = jobs.length > 0 && (
+  const resultsPagination = filteredJobs.length > 0 && (
     <div className="search-results-pagination">
       <label>
         Display
@@ -160,12 +236,50 @@ export default function SearchTab({
   }, [location]);
 
   useEffect(() => {
+    const values = manualJobEditor?.values;
+    if (!profile || !manualJobEditor?.fieldsExpanded || !values?.title.trim() || !values.description.trim()) {
+      setManualJobScore(null);
+      setScoringManualJob(false);
+      return;
+    }
+    let active = true;
+    setScoringManualJob(true);
+    const timeout = window.setTimeout(() => {
+      api.previewManualJobScore(profile.id, values)
+        .then((score) => {
+          if (active) setManualJobScore(score);
+        })
+        .catch((reason) => {
+          if (active) setError(reason instanceof Error ? reason.message : String(reason));
+        })
+        .finally(() => {
+          if (active) setScoringManualJob(false);
+        });
+    }, 400);
+    return () => {
+      active = false;
+      window.clearTimeout(timeout);
+    };
+  }, [ignoredWords, manualJobEditor?.fieldsExpanded, manualJobEditor?.values, profile]);
+
+  useEffect(() => {
     localStorage.setItem("search.resultsPageSize", String(resultsPageSize));
   }, [resultsPageSize]);
 
   useEffect(() => {
+    localStorage.setItem("search.resultsFilter", resultsFilter);
+    localStorage.setItem("search.statusFilter", statusFilter);
+    localStorage.setItem("search.rankingFilter", rankingFilter);
+    localStorage.setItem("search.dateSort", dateSort);
+  }, [dateSort, rankingFilter, resultsFilter, statusFilter]);
+
+  useEffect(() => {
     setResultsPage((current) => Math.min(current, totalResultPages));
   }, [totalResultPages]);
+
+  useEffect(() => {
+    setResultsPage(1);
+  }, [resultsFilter, statusFilter, rankingFilter, dateSort]);
 
   useEffect(() => {
     if (newlySavedJobId == null || !newlySavedJobIsDisplayed) return;
@@ -386,6 +500,10 @@ export default function SearchTab({
         url: job.url || null,
         description: job.description ?? "",
         employment_type: job.employment_type,
+        salary_min: job.salary_min,
+        salary_max: job.salary_max,
+        currency: job.currency,
+        salary_period: job.salary_period,
       } : emptyManualJob(),
       sourceWasInferred: Boolean(
         job && source && inferJobSource(job.url) === source,
@@ -479,6 +597,10 @@ export default function SearchTab({
             url: imported.url,
             description: imported.description ?? current.values.description,
             employment_type: imported.employment_type ?? current.values.employment_type,
+            salary_min: imported.salary_min ?? current.values.salary_min,
+            salary_max: imported.salary_max ?? current.values.salary_max,
+            currency: imported.currency ?? current.values.currency,
+            salary_period: imported.salary_period ?? current.values.salary_period,
           },
         };
       });
@@ -543,23 +665,25 @@ export default function SearchTab({
     setIgnoringWord(true);
     try {
       const ignored = await api.ignoreWord(profile.id, selectedUnmatchedWord.word);
-      const rescored = await api.rescoreJob(
-        selectedUnmatchedWord.jobId,
-        profile.id,
-      );
       setIgnoredWords((current) => new Set(current).add(ignored.word));
-      setJobs((current) => {
-        const updated = current.map((job) =>
-          job.id === rescored.id ? rescored : job,
+      if (selectedUnmatchedWord.jobId != null) {
+        const rescored = await api.rescoreJob(
+          selectedUnmatchedWord.jobId,
+          profile.id,
         );
-        if (cachedAt) {
-          localStorage.setItem(
-            "search.results",
-            JSON.stringify({ ts: cachedAt, jobs: updated }),
+        setJobs((current) => {
+          const updated = current.map((job) =>
+            job.id === rescored.id ? rescored : job,
           );
-        }
-        return updated;
-      });
+          if (cachedAt) {
+            localStorage.setItem(
+              "search.results",
+              JSON.stringify({ ts: cachedAt, jobs: updated }),
+            );
+          }
+          return updated;
+        });
+      }
       setSelectedUnmatchedWord(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -582,23 +706,25 @@ export default function SearchTab({
         ...profile,
         skills,
       });
-      const rescored = await api.rescoreJob(
-        selectedUnmatchedWord.jobId,
-        updatedProfile.id,
-      );
       onProfileUpdated(updatedProfile);
-      setJobs((current) => {
-        const updated = current.map((job) =>
-          job.id === rescored.id ? rescored : job,
+      if (selectedUnmatchedWord.jobId != null) {
+        const rescored = await api.rescoreJob(
+          selectedUnmatchedWord.jobId,
+          updatedProfile.id,
         );
-        if (cachedAt) {
-          localStorage.setItem(
-            "search.results",
-            JSON.stringify({ ts: cachedAt, jobs: updated }),
+        setJobs((current) => {
+          const updated = current.map((job) =>
+            job.id === rescored.id ? rescored : job,
           );
-        }
-        return updated;
-      });
+          if (cachedAt) {
+            localStorage.setItem(
+              "search.results",
+              JSON.stringify({ ts: cachedAt, jobs: updated }),
+            );
+          }
+          return updated;
+        });
+      }
       setSelectedUnmatchedWord(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -743,6 +869,63 @@ export default function SearchTab({
                       }))}
                     />
                   </div>
+                  <div>
+                    <label htmlFor="manual-job-salary-min">Salary minimum</label>
+                    <input
+                      id="manual-job-salary-min"
+                      type="number"
+                      min="0"
+                      value={manualJobEditor.values.salary_min ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, salary_min: event.target.value === "" ? null : Number(event.target.value) },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-salary-max">Salary maximum</label>
+                    <input
+                      id="manual-job-salary-max"
+                      type="number"
+                      min="0"
+                      value={manualJobEditor.values.salary_max ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, salary_max: event.target.value === "" ? null : Number(event.target.value) },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-currency">Currency</label>
+                    <input
+                      id="manual-job-currency"
+                      maxLength={10}
+                      placeholder="USD"
+                      value={manualJobEditor.values.currency ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, currency: event.target.value || null },
+                      }))}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="manual-job-salary-period">Pay period</label>
+                    <select
+                      id="manual-job-salary-period"
+                      value={manualJobEditor.values.salary_period ?? ""}
+                      onChange={(event) => setManualJobEditor((current) => current && ({
+                        ...current,
+                        values: { ...current.values, salary_period: event.target.value || null },
+                      }))}
+                    >
+                      <option value="">Not specified</option>
+                      <option value="hour">Hourly</option>
+                      <option value="day">Daily</option>
+                      <option value="week">Weekly</option>
+                      <option value="month">Monthly</option>
+                      <option value="year">Yearly</option>
+                    </select>
+                  </div>
                   <div className="manual-job-wide">
                     <label htmlFor="manual-job-description">Job description</label>
                     <textarea
@@ -757,6 +940,46 @@ export default function SearchTab({
                 </>
               )}
             </div>
+            {manualJobEditor.fieldsExpanded && (
+              <div className="manual-job-score-preview" aria-live="polite">
+                {scoringManualJob ? (
+                  <Spinner label="Calculating match..." />
+                ) : manualJobScore ? (() => {
+                  const keywords = matchKeywords(manualJobScore.match_notes);
+                  return (
+                    <>
+                      <div className="manual-job-score-heading">
+                        <strong>Profile match</strong>
+                        <span className="badge score" style={matchStyle(manualJobScore.match_score)}>
+                          match {manualJobScore.match_score}
+                        </span>
+                      </div>
+                      {keywords ? (
+                        <div className="meta">
+                          <div>Matched keywords: {keywords.matched}</div>
+                          <div>Unmatched keywords: {keywords.unmatched === "none" ? "none" : keywords.unmatched.split(", ").map((word, index) => (
+                            <span key={word}>
+                              {index > 0 && ", "}
+                              <button
+                                type="button"
+                                className="link-btn"
+                                onClick={() => setSelectedUnmatchedWord({ jobId: null, word })}
+                              >
+                                {word}
+                              </button>
+                            </span>
+                          ))}</div>
+                        </div>
+                      ) : (
+                        <p className="meta">{manualJobScore.match_notes}</p>
+                      )}
+                    </>
+                  );
+                })() : (
+                  <span className="meta">Add a job title and description to calculate the profile match.</span>
+                )}
+              </div>
+            )}
             {error && <p className="error">{error}</p>}
             <div className="actions manual-job-dialog-actions">
               <button
@@ -945,6 +1168,97 @@ export default function SearchTab({
         </div>
       )}
 
+      {jobs.length > 0 && (
+        <div className="panel search-results-filter-panel">
+          <div className="search-results-filter-heading">
+            <div>
+              <strong>Filter displayed jobs</strong>
+              <span className="meta">{filteredJobs.length} of {jobs.length} jobs</span>
+            </div>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={!filtersAreActive}
+              onClick={() => {
+                setResultsFilter("");
+                setStatusFilter("all");
+                setRankingFilter("all");
+                setDateSort("ranked");
+              }}
+            >
+              Clear filters
+            </button>
+          </div>
+          <div className="search-results-filters">
+            <label className="search-results-text-filter">
+              Filter jobs
+              <div className="input-clear">
+                <input
+                  value={resultsFilter}
+                  placeholder="Title, company, location, keyword..."
+                  onChange={(event) => setResultsFilter(event.target.value)}
+                />
+                {resultsFilter && (
+                  <button
+                    type="button"
+                    className="clear-btn"
+                    aria-label="Clear displayed jobs filter"
+                    onClick={() => setResultsFilter("")}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </label>
+            <label>
+              Status
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as JobStatus | "all")}
+              >
+                <option value="all">All statuses</option>
+                {JOB_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+              </select>
+            </label>
+            <label>
+              Ranking
+              <select
+                value={rankingFilter}
+                onChange={(event) => setRankingFilter(event.target.value as typeof rankingFilter)}
+              >
+                <option value="all">All rankings</option>
+                <option value="exact:100">100%</option>
+                <optgroup label="Greater than">
+                  {GREATER_THAN_RANKING_THRESHOLDS.map((threshold) => (
+                    <option key={`gt-${threshold}`} value={`gt:${threshold}`}>{`>${threshold}%`}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Less than">
+                  {LESS_THAN_RANKING_THRESHOLDS.map((threshold) => (
+                    <option key={`lt-${threshold}`} value={`lt:${threshold}`}>{`<${threshold}%`}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </label>
+            <label>
+              Sort
+              <select
+                value={dateSort}
+                onChange={(event) => setDateSort(event.target.value as typeof dateSort)}
+              >
+                <option value="ranked">Match ranking</option>
+                <option value="date-desc">Date: newest first</option>
+                <option value="date-asc">Date: oldest first</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {jobs.length > 0 && filteredJobs.length === 0 && (
+        <div className="panel"><p className="meta">No displayed jobs match the current filters.</p></div>
+      )}
+
       {resultsPagination}
 
       {displayedJobs.map((job) => {
@@ -981,6 +1295,7 @@ export default function SearchTab({
               </a></>
             )}
           </div>
+          {formatSalary(job) && <div className="meta">{formatSalary(job)}</div>}
           <div>
             <span className="badge">
               {job.source === "manual"
@@ -1033,7 +1348,7 @@ export default function SearchTab({
                 {isGeneratingResume ? (
                   <Spinner label="Generating…" />
                 ) : (
-                  "Generate resume"
+                  "Generate Resume"
                 )}
               </button>
               {resumeDocument && (
@@ -1057,7 +1372,7 @@ export default function SearchTab({
                 {isGeneratingCover ? (
                   <Spinner label="Generating…" />
                 ) : (
-                  "Generate cover letter"
+                  "Generate Cover Letter"
                 )}
               </button>
               {coverLetterDocument && (
@@ -1177,6 +1492,7 @@ export default function SearchTab({
               <DocumentEditor
                 compact
                 doc={editingDocument}
+                matchScore={jobs.find((job) => job.id === editingDocument.job_id)?.match_score}
                 profileId={profile?.id}
                 initialPreview={previewOnOpen}
                 onChange={(updated) =>
