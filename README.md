@@ -125,6 +125,26 @@ npm run dev
 
 App: http://localhost:5173 (proxies `/api` to the backend on port 8000).
 
+## Staging deployment
+
+The repository includes a Render Blueprint in `render.yaml`, a production
+backend container in `backend/Dockerfile`, and GitHub Actions validation in
+`.github/workflows/ci.yml`.
+
+1. Create a separate managed PostgreSQL database for staging, such as Neon.
+2. In Render, create a Blueprint from this repository and select `render.yaml`.
+3. Set the backend's `DATABASE_URL`, API provider keys, and a staging-only
+  `AUTH_SECRET_KEY` in Render's secret environment variables.
+4. Deploy the static site, then set the backend `CORS_ORIGINS` and
+  `FRONTEND_URL` to its Render URL.
+5. Set the static site's `VITE_API_BASE` to the backend URL with `/api`, for
+  example `https://resumecraft-staging-api.onrender.com/api`.
+6. Redeploy both services and confirm `https://<backend>/api/health` returns
+  `{ "status": "ok" }`.
+
+`VITE_API_BASE` is optional for local development: the frontend falls back to
+the Vite `/api` proxy when it is not set.
+
 ## Workflow
 
 1. **Profile** tab — enter your experience, skills, and education once. This is
