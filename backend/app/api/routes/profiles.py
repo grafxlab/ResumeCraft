@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +21,11 @@ from app.services import resume_parser
 from app.services.llm import LLMError
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])
+MAX_SIGNATURE_SIZE = 500_000
+SIGNATURE_MIME_TYPES = {
+    b"\x89PNG\r\n\x1a\n": "image/png",
+    b"\xff\xd8\xff": "image/jpeg",
+}
 
 
 async def _validate_resume_template(
@@ -119,6 +126,8 @@ async def update_profile(
         payload.cover_letter_template_id, "cover_letter", user, session
     )
     for key, value in payload.model_dump().items():
+        if key == "signature_data_url" and key not in payload.model_fields_set:
+            continue
         setattr(profile, key, value)
     await session.commit()
     await session.refresh(profile)
@@ -165,6 +174,46 @@ async def update_resume_template(
         profile.resume_template_id = payload.template_id
     else:
         profile.cover_letter_template_id = payload.template_id
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+@router.put("/{profile_id}/signature", response_model=ProfileOut)
+async def upload_signature(
+    profile_id: int,
+    file: UploadFile,
+    _user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Profile:
+    profile = await session.get(Profile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    data = await file.read()
+    mime_type = next(
+        (mime for signature, mime in SIGNATURE_MIME_TYPES.items() if data.startswith(signature)),
+        None,
+    )
+    if mime_type is None:
+        raise HTTPException(status_code=422, detail="Upload a PNG or JPEG signature image")
+    if not data or len(data) > MAX_SIGNATURE_SIZE:
+        raise HTTPException(status_code=422, detail="Signature images must be 500 KB or smaller")
+    profile.signature_data_url = f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+    await session.commit()
+    await session.refresh(profile)
+    return profile
+
+
+@router.delete("/{profile_id}/signature", response_model=ProfileOut)
+async def delete_signature(
+    profile_id: int,
+    _user: User = Depends(current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Profile:
+    profile = await session.get(Profile, profile_id)
+    if profile is None:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    profile.signature_data_url = None
     await session.commit()
     await session.refresh(profile)
     return profile

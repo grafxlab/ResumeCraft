@@ -118,6 +118,7 @@ class Profile(Base, TimestampMixin):
     additional_information: Mapped[str | None] = mapped_column(Text)
     additional_information_items: Mapped[list] = mapped_column(JSONB, default=list)
     profile_link_items: Mapped[list] = mapped_column(JSONB, default=list)
+    signature_data_url: Mapped[str | None] = mapped_column(Text)
     # Structured data used to build tailored documents.
     skills: Mapped[list] = mapped_column(JSONB, default=list)
     experience: Mapped[list] = mapped_column(JSONB, default=list)

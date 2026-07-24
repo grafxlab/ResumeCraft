@@ -268,7 +268,8 @@ export default function App() {
           {tab === "applications" && (
             <ApplicationsTab
               focusJobId={focusJobId}
-              profileId={profile?.id}
+              profile={profile}
+              onProfileUpdated={setProfile}
               onFocusHandled={() => setFocusJobId(null)}
             />
           )}

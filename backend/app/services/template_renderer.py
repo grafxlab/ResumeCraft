@@ -10,6 +10,9 @@ from app.models import JobPosting, Profile
 
 _PLACEHOLDER_RE = re.compile(r"{{\s*([A-Z][A-Z0-9_]*)\s*}}")
 _SKILL_TOKEN_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+#.\-]{1,}")
+_LETTER_CLOSING_RE = re.compile(
+    r"(?ims)^(?P<closing>(?:sincerely|best regards|kind regards|regards|respectfully)[,!]?)\s*\n+(?P<signature>.+?)\s*\Z"
+)
 _FONT_AWESOME_KIT_RE = re.compile(
     r"<script\b(?=[^>]*\bsrc=[\"']https://kit\.fontawesome\.com/"
     r"([a-zA-Z0-9]+)\.js(?:\?[^\"']*)?[\"'])[^>]*>\s*</script>",
@@ -59,6 +62,29 @@ def _force_single_column_additional_info(template: str) -> str:
         template[:head_end.start()]
         + _SINGLE_COLUMN_ADDITIONAL_INFO_STYLE
         + template[head_end.start():]
+    )
+
+
+def _render_document_content(content: str, signature_data_url: str | None = None) -> str:
+    """Preserve cover-letter closing lines for browser and PDF rendering."""
+    match = _LETTER_CLOSING_RE.search(content)
+    if match is None:
+        return markdown.markdown(content, extensions=["extra", "sane_lists"])
+
+    body = markdown.markdown(content[:match.start()].rstrip(), extensions=["extra", "sane_lists"])
+    signature_lines = [line.strip() for line in match.group("signature").splitlines() if line.strip()]
+    signature = "<br>".join(html.escape(line) for line in signature_lines)
+    closing = html.escape(match.group("closing").strip())
+    signature_image = (
+        f'<img class="signature-image" src="{html.escape(signature_data_url, quote=True)}" '
+        'width="115" alt="Signature">'
+        if signature_data_url
+        else ""
+    )
+    return (
+        f'{body}<p class="closing">{closing}</p>'
+        f'{signature_image}'
+        f'<p class="signature">{signature}</p>'
     )
 
 
@@ -154,7 +180,7 @@ def render_document_template(
         "SALUTATION": "Dear Hiring Team,",
         "CLOSING": "Sincerely,",
     }
-    rendered_content = markdown.markdown(content, extensions=["extra", "sane_lists"])
+    rendered_content = _render_document_content(content, profile.signature_data_url)
 
     def render_skill(block: str, skill: object) -> str:
         return _replace_values(block, {"SKILL": str(skill)})
@@ -218,6 +244,8 @@ def render_document_template(
         name = match.group(1)
         if name == "DOCUMENT_CONTENT":
             return rendered_content
+        if name == "SIGNATURE":
+            return ""
         if name == "ADDITIONAL_INFORMATION":
             return rendered_additional_items
         escaped_value = html.escape(str(values.get(name, "")))

@@ -86,6 +86,7 @@ class ProfileBase(BaseModel):
     additional_information: str | None = None
     additional_information_items: list[dict[str, str]] = []
     profile_link_items: list[dict[str, str]] = []
+    signature_data_url: str | None = None
     skills: list = []
     experience: list = []
     education: list = []
@@ -288,6 +289,7 @@ class ApplicationJobInfo(BaseModel):
     url: str
     source: str
     match_score: float | None
+    match_notes: str | None
     salary_min: float | None
     salary_max: float | None
     currency: str | None

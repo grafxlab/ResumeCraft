@@ -45,6 +45,7 @@ export interface Profile {
   additional_information: string | null;
   additional_information_items: TextLinkItem[];
   profile_link_items: TextLinkItem[];
+  signature_data_url: string | null;
   skills: string[];
   experience: unknown[];
   education: unknown[];
@@ -246,6 +247,7 @@ export interface Application {
     url: string;
     source: string;
     match_score: number | null;
+    match_notes: string | null;
     salary_min: number | null;
     salary_max: number | null;
     currency: string | null;

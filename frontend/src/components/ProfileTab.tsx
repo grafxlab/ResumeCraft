@@ -49,6 +49,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
     () => localStorage.getItem("profile.masterResumeExpanded") === "true",
   );
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const [uploadingSignature, setUploadingSignature] = useState(false);
   const [templateNotice, setTemplateNotice] = useState<{
     documentType: "resume" | "cover_letter";
     message: string;
@@ -73,6 +74,7 @@ export default function ProfileTab({ profile, onSaved }: Props) {
   const fileRef = useRef<HTMLInputElement>(null);
   const templateFileRef = useRef<HTMLInputElement>(null);
   const coverLetterTemplateFileRef = useRef<HTMLInputElement>(null);
+  const signatureFileRef = useRef<HTMLInputElement>(null);
   const hydratedProfileId = useRef<number | null>(null);
 
   const applyData = (data: Partial<Profile>) => {
@@ -278,6 +280,33 @@ export default function ProfileTab({ profile, onSaved }: Props) {
       setUploadingTemplate(false);
       const fileInput = documentType === "resume" ? templateFileRef : coverLetterTemplateFileRef;
       if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const uploadSignature = async (file: File | undefined) => {
+    if (!file || !profile) return;
+    setUploadingSignature(true);
+    setError(null);
+    try {
+      onSaved(await api.uploadSignature(profile.id, file));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploadingSignature(false);
+      if (signatureFileRef.current) signatureFileRef.current.value = "";
+    }
+  };
+
+  const removeSignature = async () => {
+    if (!profile) return;
+    setUploadingSignature(true);
+    setError(null);
+    try {
+      onSaved(await api.deleteSignature(profile.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUploadingSignature(false);
     }
   };
 
@@ -971,6 +1000,41 @@ export default function ProfileTab({ profile, onSaved }: Props) {
             {templateNotice?.documentType === "cover_letter" && (
               <p className={`meta template-notice ${templateNotice.tone}`}>{templateNotice.message}</p>
             )}
+            <label>Cover letter signature</label>
+            <div className="profile-template-controls signature-controls">
+              {profile?.signature_data_url ? (
+                <img className="signature-preview" src={profile.signature_data_url} alt="Uploaded signature" />
+              ) : (
+                <span className="meta">No signature uploaded.</span>
+              )}
+              <label
+                className="icon-btn template-preview-btn template-upload"
+                aria-label="Upload cover letter signature"
+                aria-disabled={uploadingSignature || !profile}
+                title="Upload PNG or JPEG signature"
+              >
+                <Upload size={17} aria-hidden="true" />
+                <input
+                  ref={signatureFileRef}
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  disabled={uploadingSignature || !profile}
+                  onChange={(event) => void uploadSignature(event.target.files?.[0])}
+                />
+              </label>
+              {profile?.signature_data_url && (
+                <button
+                  type="button"
+                  className="icon-btn danger template-preview-btn"
+                  aria-label="Remove cover letter signature"
+                  title="Remove signature"
+                  disabled={uploadingSignature}
+                  onClick={() => void removeSignature()}
+                >
+                  <Trash2 size={17} aria-hidden="true" />
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>

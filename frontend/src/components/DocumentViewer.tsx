@@ -6,11 +6,13 @@ import Spinner from "./Spinner";
 
 interface Props {
   documentId: number;
+  profileId: number | undefined;
   onClose: () => void;
 }
 
-export default function DocumentViewer({ documentId, onClose }: Props) {
+export default function DocumentViewer({ documentId, profileId, onClose }: Props) {
   const [doc, setDoc] = useState<Document | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,9 +22,25 @@ export default function DocumentViewer({ documentId, onClose }: Props) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [documentId]);
 
+  useEffect(() => {
+    if (!doc || !profileId) return;
+    let active = true;
+    api
+      .previewDocument(doc.id, profileId)
+      .then(({ rendered_html }) => {
+        if (active) setPreviewHtml(rendered_html);
+      })
+      .catch((e) => {
+        if (active) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [doc, profileId]);
+
   const downloadPdf = async () => {
     try {
-      const { blob, filename } = await api.downloadDocumentPdf(documentId);
+      const { blob, filename } = await api.downloadDocumentPdf(documentId, profileId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -62,11 +80,13 @@ export default function DocumentViewer({ documentId, onClose }: Props) {
           </div>
         </div>
         {error && <p className="error">{error}</p>}
-        {doc ? (
+        {doc && (!profileId || previewHtml) ? (
           <div
             className="doc-preview"
             style={{ maxHeight: "70vh" }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(doc.content) }}
+            dangerouslySetInnerHTML={{
+              __html: previewHtml ?? renderMarkdown(doc.content),
+            }}
           />
         ) : (
           !error && <Spinner size="lg" label="Loading…" block />

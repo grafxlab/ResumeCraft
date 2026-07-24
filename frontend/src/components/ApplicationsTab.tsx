@@ -3,7 +3,7 @@ import { Eye } from "lucide-react";
 import { api } from "../api";
 import { matchStyle } from "../match";
 import { formatSalary } from "../salary";
-import type { Application, ApplicationStatus, Document } from "../types";
+import type { Application, ApplicationStatus, Document, Profile } from "../types";
 import DocumentViewer from "./DocumentViewer";
 
 const STATUSES: ApplicationStatus[] = [
@@ -15,15 +15,35 @@ const STATUSES: ApplicationStatus[] = [
   "no_response",
 ];
 
+const statusLabel = (status: ApplicationStatus) =>
+  status.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 interface Props {
   focusJobId: number | null;
-  profileId: number | undefined;
+  profile: Profile | null;
+  onProfileUpdated: (profile: Profile) => void;
   onFocusHandled: () => void;
+}
+
+function matchKeywords(notes: string | null): {
+  matched: string;
+  unmatched: string;
+} | null {
+  const prefix = "Matched: ";
+  const separator = ". Missing: ";
+  if (!notes?.startsWith(prefix)) return null;
+  const separatorIndex = notes.indexOf(separator, prefix.length);
+  if (separatorIndex === -1) return null;
+  return {
+    matched: notes.slice(prefix.length, separatorIndex),
+    unmatched: notes.slice(separatorIndex + separator.length).replace(/\.$/, ""),
+  };
 }
 
 export default function ApplicationsTab({
   focusJobId,
-  profileId,
+  profile,
+  onProfileUpdated,
   onFocusHandled,
 }: Props) {
   const [apps, setApps] = useState<Application[]>([]);
@@ -46,7 +66,15 @@ export default function ApplicationsTab({
     applicationId: number;
     type: "resume" | "cover_letter";
   } | null>(null);
+  const [ignoredWords, setIgnoredWords] = useState<Set<string>>(new Set());
+  const [selectedUnmatchedWord, setSelectedUnmatchedWord] = useState<{
+    jobId: number;
+    word: string;
+  } | null>(null);
+  const [ignoringWord, setIgnoringWord] = useState(false);
+  const [addingWord, setAddingWord] = useState(false);
   const cardRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const profileId = profile?.id;
 
   const load = async () => {
     setError(null);
@@ -73,6 +101,17 @@ export default function ApplicationsTab({
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!profile) {
+      setIgnoredWords(new Set());
+      return;
+    }
+    api
+      .listIgnoredWords(profile.id)
+      .then((words) => setIgnoredWords(new Set(words.map((item) => item.word))))
+      .catch(() => setIgnoredWords(new Set()));
+  }, [profile]);
 
   // When navigated here from a "Tracked" button, reveal and highlight the app.
   useEffect(() => {
@@ -222,6 +261,51 @@ export default function ApplicationsTab({
     }
   };
 
+  const rescoreApplicationJob = async (jobId: number, activeProfile: Profile) => {
+    const rescored = await api.rescoreJob(jobId, activeProfile.id);
+    setApps((current) => current.map((app) => (
+      app.job_id === rescored.id ? { ...app, job: { ...app.job, ...rescored } } : app
+    )));
+  };
+
+  const ignoreSelectedWord = async () => {
+    if (!profile || !selectedUnmatchedWord) return;
+    setIgnoringWord(true);
+    setError(null);
+    try {
+      const ignored = await api.ignoreWord(profile.id, selectedUnmatchedWord.word);
+      setIgnoredWords((current) => new Set(current).add(ignored.word));
+      await rescoreApplicationJob(selectedUnmatchedWord.jobId, profile);
+      setSelectedUnmatchedWord(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIgnoringWord(false);
+    }
+  };
+
+  const addSelectedWordToResume = async () => {
+    if (!profile || !selectedUnmatchedWord) return;
+    setAddingWord(true);
+    setError(null);
+    try {
+      const word = selectedUnmatchedWord.word;
+      const skills = profile.skills.some(
+        (skill) => skill.toLowerCase() === word.toLowerCase(),
+      )
+        ? profile.skills
+        : [...profile.skills, word];
+      const updatedProfile = await api.updateProfile(profile.id, { ...profile, skills });
+      onProfileUpdated(updatedProfile);
+      await rescoreApplicationJob(selectedUnmatchedWord.jobId, updatedProfile);
+      setSelectedUnmatchedWord(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAddingWord(false);
+    }
+  };
+
   return (
     <div>
       <div className="panel">
@@ -261,7 +345,7 @@ export default function ApplicationsTab({
               <option value="all">All statuses</option>
               {STATUSES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                    {statusLabel(s)}
                 </option>
               ))}
             </select>
@@ -289,6 +373,10 @@ export default function ApplicationsTab({
             .reverse()
             .find((document) => document.type === "cover_letter")?.id
             ?? app.cover_letter_document_id;
+          const keywords = matchKeywords(app.job.match_notes);
+          const unmatchedWords = keywords && keywords.unmatched !== "none"
+            ? keywords.unmatched.split(", ").filter((word) => !ignoredWords.has(word))
+            : [];
           return <div
           className="panel"
           key={app.id}
@@ -365,6 +453,28 @@ export default function ApplicationsTab({
             {app.job.location ? ` · ${app.job.location}` : ""} · Tracked{" "}
             {fmtTracked(app.created_at)}
           </div>
+          {keywords ? (
+            <div className="meta" style={{ margin: "8px 0" }}>
+              <div><strong>Matched Keywords:</strong> {keywords.matched}</div>
+              <div style={{ marginTop: 6 }}>
+                <strong>Unmatched Keywords:</strong>{" "}
+                {unmatchedWords.length > 0 ? unmatchedWords.map((word, index) => (
+                  <span key={word}>
+                    {index > 0 && ", "}
+                    <button
+                      type="button"
+                      className="link-btn"
+                      onClick={() => setSelectedUnmatchedWord({ jobId: app.job_id, word })}
+                    >
+                      {word}
+                    </button>
+                  </span>
+                )) : "none"}
+              </div>
+            </div>
+          ) : (
+            app.job.match_notes && <p className="meta">{app.job.match_notes}</p>
+          )}
 
           <div className="row" style={{ alignItems: "flex-end", marginTop: 6 }}>
             <div style={{ maxWidth: 180 }}>
@@ -383,7 +493,7 @@ export default function ApplicationsTab({
               >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {statusLabel(s)}
                   </option>
                 ))}
               </select>
@@ -413,26 +523,22 @@ export default function ApplicationsTab({
             </div>
             <div>
               <label>Documents</label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  className="btn secondary"
-                  disabled={generatingDocument !== null || regeneratingDocumentId !== null}
-                  onClick={() => generateDocument(app, "resume")}
-                >
-                  {generatingDocument?.applicationId === app.id && generatingDocument.type === "resume"
-                    ? "Generating Resume..."
-                    : "Generate Resume"}
-                </button>
-                <button
-                  className="btn secondary"
-                  disabled={generatingDocument !== null || regeneratingDocumentId !== null}
-                  onClick={() => generateDocument(app, "cover_letter")}
-                >
-                  {generatingDocument?.applicationId === app.id && generatingDocument.type === "cover_letter"
-                    ? "Generating Cover Letter..."
-                    : "Generate Cover Letter"}
-                </button>
-                  {resumeDocumentId != null && (
+              <div className="application-document-actions">
+                <div className="application-document-group">
+                  <span className="application-document-label">Resume</span>
+                  {resumeDocumentId == null ? (
+                    <button
+                      className="btn secondary"
+                      title="Create a New Resume"
+                      disabled={generatingDocument !== null || regeneratingDocumentId !== null}
+                      onClick={() => generateDocument(app, "resume")}
+                    >
+                      {generatingDocument?.applicationId === app.id && generatingDocument.type === "resume"
+                        ? "Generating..."
+                        : "Generate"}
+                    </button>
+                  ) : (
+                    <div className="generation-action">
                     <button
                       className="icon-btn"
                       aria-label="View Resume"
@@ -441,21 +547,34 @@ export default function ApplicationsTab({
                     >
                       <Eye size={17} aria-hidden="true" />
                     </button>
+                      <button
+                        className="btn secondary"
+                        title="Regenerate Resume"
+                        disabled={regeneratingDocumentId !== null}
+                        onClick={() => regenerateDocument(resumeDocumentId)}
+                      >
+                        {regeneratingDocumentId === resumeDocumentId
+                          ? "Regenerating..."
+                          : "Regenerate"}
+                      </button>
+                    </div>
                   )}
-                  <button
-                    className="btn secondary"
-                    disabled={
-                      resumeDocumentId == null || regeneratingDocumentId !== null
-                    }
-                    onClick={() =>
-                      resumeDocumentId != null && regenerateDocument(resumeDocumentId)
-                    }
-                  >
-                    {regeneratingDocumentId === resumeDocumentId
-                      ? "Regenerating Resume..."
-                      : "Regenerate Resume"}
-                  </button>
-                  {coverLetterDocumentId != null && (
+                </div>
+                <div className="application-document-group">
+                  <span className="application-document-label">Cover Letter</span>
+                  {coverLetterDocumentId == null ? (
+                    <button
+                      className="btn secondary"
+                      title="Create a New Cover Letter"
+                      disabled={generatingDocument !== null || regeneratingDocumentId !== null}
+                      onClick={() => generateDocument(app, "cover_letter")}
+                    >
+                      {generatingDocument?.applicationId === app.id && generatingDocument.type === "cover_letter"
+                        ? "Generating..."
+                        : "Generate"}
+                    </button>
+                  ) : (
+                    <div className="generation-action">
                     <button
                       className="icon-btn"
                       aria-label="View Cover Letter"
@@ -464,21 +583,19 @@ export default function ApplicationsTab({
                     >
                       <Eye size={17} aria-hidden="true" />
                     </button>
+                      <button
+                        className="btn secondary"
+                        title="Regenerate Cover Letter"
+                        disabled={regeneratingDocumentId !== null}
+                        onClick={() => regenerateDocument(coverLetterDocumentId)}
+                      >
+                        {regeneratingDocumentId === coverLetterDocumentId
+                          ? "Regenerating..."
+                          : "Regenerate"}
+                      </button>
+                    </div>
                   )}
-                  <button
-                    className="btn secondary"
-                    disabled={
-                      coverLetterDocumentId == null || regeneratingDocumentId !== null
-                    }
-                    onClick={() =>
-                      coverLetterDocumentId != null &&
-                      regenerateDocument(coverLetterDocumentId)
-                    }
-                  >
-                    {regeneratingDocumentId === coverLetterDocumentId
-                      ? "Regenerating Cover Letter..."
-                      : "Regenerate Cover Letter"}
-                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -500,8 +617,55 @@ export default function ApplicationsTab({
       {viewingDocId != null && (
         <DocumentViewer
           documentId={viewingDocId}
+          profileId={profileId}
           onClose={() => setViewingDocId(null)}
         />
+      )}
+
+      {selectedUnmatchedWord && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onClick={() => !ignoringWord && !addingWord && setSelectedUnmatchedWord(null)}
+        >
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="application-keyword-action-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <strong id="application-keyword-action-title">Keyword Action</strong>
+            </div>
+            <p className="meta">
+              Add <strong>{selectedUnmatchedWord.word}</strong> to your resume skills, or ignore it for future job match scores.
+            </p>
+            <div className="actions" style={{ justifyContent: "flex-end" }}>
+              <button
+                className="btn secondary"
+                disabled={ignoringWord || addingWord}
+                onClick={() => setSelectedUnmatchedWord(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn secondary"
+                disabled={ignoringWord || addingWord}
+                onClick={addSelectedWordToResume}
+              >
+                {addingWord ? "Adding..." : "Add Keyword"}
+              </button>
+              <button
+                className="btn"
+                disabled={ignoringWord || addingWord}
+                onClick={ignoreSelectedWord}
+              >
+                {ignoringWord ? "Ignoring..." : "Ignore"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmDelete && (

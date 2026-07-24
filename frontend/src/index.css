@@ -835,6 +835,35 @@ pre {
   gap: 4px;
 }
 
+.application-document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.application-document-group {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.application-document-label {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.signature-controls {
+  align-items: center;
+}
+
+.signature-preview {
+  height: 34px;
+  object-fit: contain;
+  object-position: left center;
+  width: 120px;
+}
+
 .input-clear {
   position: relative;
 }

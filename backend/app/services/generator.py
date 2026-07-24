@@ -61,6 +61,28 @@ def _with_instructions(prompt: str, instructions: str | None = None) -> str:
     return prompt
 
 
+def _sanitize_generated_text(text: str) -> str:
+    """Remove unmatched parentheses without changing balanced content."""
+    unmatched_opening_indexes: list[int] = []
+    unmatched_closing_indexes: set[int] = set()
+
+    for index, character in enumerate(text):
+        if character == "(":
+            unmatched_opening_indexes.append(index)
+        elif character == ")":
+            if unmatched_opening_indexes:
+                unmatched_opening_indexes.pop()
+            else:
+                unmatched_closing_indexes.add(index)
+
+    characters_to_remove = set(unmatched_opening_indexes) | unmatched_closing_indexes
+    return "".join(
+        character
+        for index, character in enumerate(text)
+        if index not in characters_to_remove
+    )
+
+
 async def generate_resume(
     job: JobPosting,
     profile: Profile,
@@ -91,13 +113,14 @@ async def generate_resume(
             "only, not HTML or placeholder tokens, so the result remains editable and "
             "exportable."
         )
-    return await llm.complete(
+    generated = await llm.complete(
         RESUME_SYSTEM,
         _with_instructions(prompt, instructions),
         max_tokens=2000,
         operation="resume_generation",
         user_id=user_id,
     )
+    return _sanitize_generated_text(generated)
 
 
 async def generate_cover_letter(
@@ -128,10 +151,11 @@ async def generate_cover_letter(
             "so do not repeat them in the Markdown. Return Markdown only, not HTML or "
             "placeholder tokens, so the result remains editable and exportable."
         )
-    return await llm.complete(
+    generated = await llm.complete(
         COVER_LETTER_SYSTEM,
         _with_instructions(prompt, instructions),
         max_tokens=1200,
         operation="cover_letter_generation",
         user_id=user_id,
     )
+    return _sanitize_generated_text(generated)

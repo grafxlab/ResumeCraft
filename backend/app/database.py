@@ -160,6 +160,9 @@ async def init_db() -> None:
             )
         )
         await conn.execute(
+            text("ALTER TABLE profiles ADD COLUMN IF NOT EXISTS signature_data_url TEXT")
+        )
+        await conn.execute(
             text(
                 "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS "
                 "cover_letter_template_id INTEGER REFERENCES templates(id) "

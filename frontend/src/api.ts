@@ -143,6 +143,23 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ template_id, document_type }),
     }),
+  uploadSignature: async (id: number, file: File): Promise<Profile> => {
+    const token = localStorage.getItem("auth.token");
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(`${BASE}/profiles/${id}/signature`, {
+      method: "PUT",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail ?? "Unable to upload signature");
+    }
+    return response.json() as Promise<Profile>;
+  },
+  deleteSignature: (id: number) =>
+    request<Profile>(`/profiles/${id}/signature`, { method: "DELETE" }),
   listIgnoredWords: (profileId: number) =>
     request<IgnoredWord[]>(`/profiles/${profileId}/ignored-words`),
   ignoreWord: (profileId: number, word: string) =>

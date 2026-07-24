@@ -72,6 +72,7 @@ async def _to_detail(
             url=job.url,
             source=job.source,
             match_score=job.match_score,
+            match_notes=job.match_notes,
             salary_min=job.salary_min,
             salary_max=job.salary_max,
             currency=job.currency,
